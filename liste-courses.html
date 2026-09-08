@@ -1,0 +1,3283 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="color-scheme" content="light dark">
+<title>Liste de courses</title>
+<style>
+/* =========================================================================
+   ——— THÈME ———  Palette : un accent unique + des gris. Clair et sombre
+   sont définis explicitement. Par défaut on suit prefers-color-scheme ;
+   l'attribut data-theme sur <html> force l'un ou l'autre.
+   ========================================================================= */
+:root{
+  color-scheme: light;
+  --bg:#ffffff;
+  --bg-alt:#f2f4f6;
+  --surface:#ffffff;
+  --surface-2:#f7f8fa;
+  --border:#d6dae0;
+  --border-fort:#aab2bd;
+  --texte:#15181d;
+  --texte-doux:#565d6b;
+  --accent:#0a6b4c;
+  --accent-doux:#e2f1ea;
+  --accent-texte:#ffffff;
+  --danger:#a4231c;
+  --danger-doux:#fbeceb;
+  --ombre:0 1px 2px rgba(16,20,26,.08), 0 2px 10px rgba(16,20,26,.05);
+  --r:10px;
+  --tap:44px;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="clair"]){
+    color-scheme: dark;
+    --bg:#101317;
+    --bg-alt:#171b21;
+    --surface:#1a1f26;
+    --surface-2:#20262e;
+    --border:#333b45;
+    --border-fort:#59636f;
+    --texte:#eef1f5;
+    --texte-doux:#a9b2bf;
+    --accent:#5cd6a0;
+    --accent-doux:#12302a;
+    --accent-texte:#07160f;
+    --danger:#ff9a91;
+    --danger-doux:#3a1c19;
+    --ombre:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+  }
+}
+:root[data-theme="sombre"]{
+  color-scheme: dark;
+  --bg:#101317;
+  --bg-alt:#171b21;
+  --surface:#1a1f26;
+  --surface-2:#20262e;
+  --border:#333b45;
+  --border-fort:#59636f;
+  --texte:#eef1f5;
+  --texte-doux:#a9b2bf;
+  --accent:#5cd6a0;
+  --accent-doux:#12302a;
+  --accent-texte:#07160f;
+  --danger:#ff9a91;
+  --danger-doux:#3a1c19;
+  --ombre:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+}
+
+/* ——— BASE ——— */
+*,*::before,*::after{ box-sizing:border-box; }
+html,body{ margin:0; padding:0; }
+body{
+  background:var(--bg-alt);
+  color:var(--texte);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+  font-size:16px;
+  line-height:1.45;
+  -webkit-text-size-adjust:100%;
+  overflow-x:hidden;
+}
+h1,h2,h3{ line-height:1.25; margin:0 0 .5rem; }
+h1{ font-size:1.25rem; }
+h2{ font-size:1.05rem; }
+h3{ font-size:.95rem; }
+p{ margin:.35rem 0; }
+a{ color:var(--accent); }
+:focus-visible{ outline:3px solid var(--accent); outline-offset:2px; border-radius:4px; }
+
+/* ——— STRUCTURE ——— */
+#app{ min-height:100dvh; display:flex; flex-direction:column; }
+.topbar{
+  position:sticky; top:0; z-index:30;
+  background:var(--surface); border-bottom:1px solid var(--border);
+  padding:.5rem .75rem; padding-top:calc(.5rem + env(safe-area-inset-top));
+  display:flex; align-items:center; gap:.5rem; min-height:44px;
+}
+.topbar .titre{ font-weight:650; font-size:1.05rem; margin:0; flex:1; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+main{
+  flex:1; width:100%; max-width:960px; margin:0 auto;
+  padding:.75rem .75rem calc(84px + env(safe-area-inset-bottom));
+}
+.vue{ display:none; }
+.vue.actif{ display:block; }
+
+.tabbar{
+  position:fixed; left:0; right:0; bottom:0; z-index:40;
+  display:flex; background:var(--surface); border-top:1px solid var(--border);
+  padding-bottom:env(safe-area-inset-bottom);
+}
+.tabbar button{
+  flex:1; min-height:56px; border:0; background:none; color:var(--texte-doux);
+  font:inherit; font-size:.78rem; cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
+  padding:.25rem; transition:color 120ms ease, background-color 120ms ease;
+}
+.tabbar button .ic{ font-size:1.15rem; line-height:1; }
+.tabbar button[aria-current="page"]{ color:var(--accent); font-weight:650; background:var(--accent-doux); }
+
+@media (min-width:900px){
+  #app{ flex-direction:row; }
+  .tabbar{
+    position:sticky; top:0; bottom:auto; height:100dvh; width:210px; flex:0 0 210px;
+    flex-direction:column; border-top:0; border-right:1px solid var(--border);
+    padding:.75rem .5rem; gap:.25rem; align-items:stretch;
+  }
+  .tabbar button{ flex:0 0 auto; min-height:46px; flex-direction:row; justify-content:flex-start;
+    gap:.6rem; font-size:.95rem; padding:0 .75rem; border-radius:var(--r); }
+  .colonne-principale{ flex:1; min-width:0; display:flex; flex-direction:column; }
+  main{ padding-bottom:2rem; }
+  .topbar{ padding-top:.5rem; }
+}
+
+/* ——— COMPOSANTS ——— */
+.carte{
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  padding:.75rem; margin-bottom:.6rem; box-shadow:var(--ombre);
+}
+.carte.plate{ box-shadow:none; }
+.section-titre{ font-size:.78rem; text-transform:uppercase; letter-spacing:.06em;
+  color:var(--texte-doux); font-weight:700; margin:1rem 0 .4rem; }
+.doux{ color:var(--texte-doux); }
+.pt{ font-size:.85rem; }
+.tpt{ font-size:.78rem; }
+.gras{ font-weight:650; }
+.rien{ color:var(--texte-doux); padding:1.25rem .5rem; text-align:center; }
+
+.btn{
+  font:inherit; font-size:.92rem; font-weight:600; cursor:pointer;
+  background:var(--surface-2); color:var(--texte);
+  border:1px solid var(--border-fort); border-radius:var(--r);
+  padding:.5rem .75rem; min-height:var(--tap);
+  display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
+  transition:background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+.btn:hover{ background:var(--bg-alt); }
+.btn:active{ opacity:.75; }
+.btn.principal{ background:var(--accent); color:var(--accent-texte); border-color:var(--accent); }
+.btn.principal:hover{ filter:brightness(1.08); }
+.btn.danger{ color:var(--danger); border-color:var(--danger); background:var(--danger-doux); }
+.btn.mini{ min-height:34px; padding:.2rem .5rem; font-size:.82rem; border-radius:8px; }
+.btn.fantome{ background:transparent; border-color:transparent; }
+.btn.fantome:hover{ background:var(--bg-alt); }
+.btn[disabled]{ opacity:.45; cursor:not-allowed; }
+.barre-actions{ display:flex; flex-wrap:wrap; gap:.4rem; }
+
+input,select,textarea{
+  font:inherit; font-size:16px; color:var(--texte); background:var(--surface);
+  border:1px solid var(--border-fort); border-radius:8px; padding:.45rem .55rem;
+  min-height:var(--tap); width:100%; max-width:100%;
+}
+textarea{ min-height:80px; resize:vertical; line-height:1.4; }
+label.champ{ display:block; margin-bottom:.6rem; }
+label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(--texte-doux); margin-bottom:.2rem; }
+.ligne-champs{ display:flex; gap:.5rem; flex-wrap:wrap; }
+.ligne-champs > *{ flex:1 1 140px; min-width:0; }
+.inline-case{ display:inline-flex; align-items:center; gap:.4rem; min-height:var(--tap); cursor:pointer; }
+.inline-case input[type="checkbox"]{ width:22px; height:22px; min-height:0; flex:0 0 auto; accent-color:var(--accent); }
+
+.puce{
+  display:inline-flex; align-items:center; gap:.25rem;
+  background:var(--bg-alt); border:1px solid var(--border); color:var(--texte-doux);
+  border-radius:999px; padding:.1rem .5rem; font-size:.75rem; font-weight:600; white-space:nowrap;
+}
+.puce.accent{ background:var(--accent-doux); border-color:transparent; color:var(--accent); }
+.puce.alerte{ background:var(--danger-doux); border-color:transparent; color:var(--danger); }
+.puce-bouton{ cursor:pointer; }
+.puce-bouton:hover{ border-color:var(--border-fort); }
+
+.recherche{ display:flex; gap:.4rem; align-items:center; margin-bottom:.6rem; flex-wrap:wrap; }
+.recherche input[type="search"]{ flex:1 1 180px; }
+
+/* ——— SEMAINE ——— */
+.grille-recettes{ display:grid; gap:.6rem; grid-template-columns:1fr; }
+@media (min-width:640px){ .grille-recettes{ grid-template-columns:1fr 1fr; } }
+.carte-recette{ display:flex; gap:.6rem; align-items:flex-start; }
+.carte-recette .infos{ flex:1; min-width:0; }
+.carte-recette .nom{ font-weight:650; overflow-wrap:anywhere; }
+.carte-recette .meta{ font-size:.8rem; color:var(--texte-doux); display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.15rem; }
+.carte-recette.selectionnee{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+.stepper{ display:inline-flex; align-items:center; border:1px solid var(--border-fort); border-radius:999px; overflow:hidden; background:var(--surface); }
+.stepper button{ border:0; background:none; color:var(--texte); font:inherit; font-size:1.15rem; font-weight:700;
+  width:var(--tap); height:var(--tap); cursor:pointer; line-height:1; }
+.stepper button:hover{ background:var(--bg-alt); }
+.stepper .valeur{ min-width:62px; text-align:center; font-size:.85rem; font-weight:650; padding:0 .2rem; }
+.recap{ position:sticky; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:20; }
+@media (min-width:900px){ .recap{ bottom:.75rem; } }
+
+/* ——— LISTE ——— */
+.entete-liste{
+  position:sticky; z-index:25; top:var(--h-topbar, 0px);
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  padding:.5rem .7rem; margin:-.1rem 0 .6rem; box-shadow:var(--ombre);
+  font-size:1.02rem; font-weight:650; display:flex; flex-wrap:wrap; gap:.15rem .5rem; align-items:baseline;
+}
+@media (min-width:900px){ .entete-liste{ top:calc(var(--h-topbar, 0px) + .25rem); } }
+.entete-liste .reste{ color:var(--accent); }
+.rayon{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); margin-bottom:.6rem; overflow:hidden; }
+.rayon > summary{
+  cursor:pointer; list-style:none; padding:.6rem .7rem; font-weight:700; font-size:.9rem;
+  text-transform:uppercase; letter-spacing:.04em; color:var(--texte-doux);
+  background:var(--surface-2); display:flex; align-items:center; gap:.5rem; min-height:44px;
+}
+.rayon > summary::-webkit-details-marker{ display:none; }
+.rayon > summary .compte{ margin-left:auto; font-weight:600; letter-spacing:0; text-transform:none; font-size:.82rem; }
+.rayon > summary::before{ content:"▸"; transition:transform 120ms ease; display:inline-block; }
+.rayon[open] > summary::before{ transform:rotate(90deg); }
+.article{
+  display:flex; align-items:flex-start; gap:.1rem; border-top:1px solid var(--border);
+  font-size:17px;
+}
+.article .case{
+  flex:0 0 auto; width:52px; min-height:52px; display:flex; align-items:center; justify-content:center;
+  cursor:pointer; background:none; border:0; padding:0;
+}
+.article .case input[type="checkbox"]{ width:26px; height:26px; min-height:0; accent-color:var(--accent); cursor:pointer; }
+.article .corps{
+  flex:1; min-width:0; text-align:left; background:none; border:0; color:inherit; font:inherit; font-size:17px;
+  padding:.55rem .5rem .55rem 0; cursor:pointer;
+  display:flex; gap:.5rem; align-items:baseline; flex-wrap:wrap;
+}
+.article .nom{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.article .qte{ font-weight:650; white-space:nowrap; }
+.article .prix{ color:var(--texte-doux); font-size:.85rem; white-space:nowrap; }
+.article.coche{ background:var(--surface-2); }
+.article.coche .nom,.article.coche .qte{ text-decoration:line-through; color:var(--texte-doux); font-weight:400; }
+.detail-provenance{ padding:0 .6rem .6rem 52px; font-size:.85rem; color:var(--texte-doux); border-top:0; background:var(--surface-2); }
+.detail-provenance ul{ margin:.2rem 0 0; padding-left:1.1rem; }
+.ajout-manuel{ display:flex; gap:.4rem; flex-wrap:wrap; }
+.ajout-manuel input{ flex:1 1 160px; }
+
+/* ——— RECETTES ——— */
+.lignes-ing{ display:flex; flex-direction:column; gap:.4rem; }
+.ligne-ing{ display:grid; gap:.35rem; grid-template-columns:1fr; align-items:start;
+  border:1px solid var(--border); border-radius:8px; padding:.45rem; background:var(--surface-2); }
+@media (min-width:560px){
+  .ligne-ing{ grid-template-columns: minmax(0,1fr) 92px 110px auto auto; align-items:center; }
+}
+.ligne-ing .zone-fixe{ display:flex; align-items:center; }
+.editeur{ display:grid; gap:0 .6rem; grid-template-columns:1fr; align-items:start; }
+@media (min-width:1000px){
+  .editeur{ grid-template-columns:minmax(0,1fr) 290px; }
+  .col-apercu{ position:sticky; top:calc(var(--h-topbar, 0px) + .5rem); }
+}
+.apercu{ background:var(--accent-doux); border-color:transparent; }
+.apercu ul{ margin:.3rem 0 0; padding-left:1.15rem; }
+.avert{ background:var(--danger-doux); color:var(--danger); border:1px solid transparent;
+  border-radius:8px; padding:.5rem .65rem; font-size:.88rem; font-weight:600; }
+.rappel{ background:var(--accent-doux); color:var(--accent); border-radius:8px;
+  padding:.5rem .65rem; font-size:.9rem; font-weight:700; margin-bottom:.6rem; }
+
+/* ——— AUTOCOMPLÉTION ——— */
+.ac-boite{ position:relative; }
+.ac-liste{
+  position:absolute; z-index:60; left:0; right:0; top:calc(100% + 2px);
+  background:var(--surface); border:1px solid var(--border-fort); border-radius:8px;
+  box-shadow:var(--ombre); max-height:240px; overflow:auto; padding:.2rem;
+}
+.ac-liste[hidden]{ display:none; }
+.ac-item{ padding:.5rem .55rem; border-radius:6px; cursor:pointer; font-size:.95rem; min-height:40px;
+  display:flex; align-items:center; gap:.4rem; }
+.ac-item .sec{ margin-left:auto; font-size:.75rem; color:var(--texte-doux); }
+.ac-item.actif{ background:var(--accent-doux); color:var(--accent); }
+.ac-item.creer{ font-weight:650; }
+
+/* ——— TABLEAUX (référentiel) ——— */
+.table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--border); border-radius:var(--r); background:var(--surface); }
+table.ref{ border-collapse:collapse; width:100%; min-width:1040px; table-layout:fixed; font-size:.9rem; }
+table.ref th,table.ref td{ border-bottom:1px solid var(--border); padding:.3rem .4rem; text-align:left; vertical-align:middle; }
+table.ref th{ background:var(--surface-2); position:sticky; top:0; z-index:1; font-size:.78rem;
+  text-transform:uppercase; letter-spacing:.04em; color:var(--texte-doux); cursor:pointer; white-space:nowrap; }
+table.ref input,table.ref select{ min-height:36px; padding:.2rem .35rem; font-size:.88rem; min-width:0; }
+/* Largeurs explicites : sans elles, prix et famille se retrouvent tronqués. */
+table.ref th:nth-child(1),table.ref td:nth-child(1){ width:180px; }
+table.ref th:nth-child(2),table.ref td:nth-child(2){ width:152px; }
+table.ref th:nth-child(3),table.ref td:nth-child(3){ width:104px; }
+table.ref th:nth-child(4),table.ref td:nth-child(4){ width:106px; }
+table.ref th:nth-child(5),table.ref td:nth-child(5){ width:126px; }
+table.ref th:nth-child(6),table.ref td:nth-child(6){ width:72px; text-align:center; }
+table.ref th:nth-child(7),table.ref td:nth-child(7){ width:180px; }
+table.ref .cellule-prix{ display:flex; align-items:center; gap:.25rem; }
+table.ref .cellule-prix input{ flex:1 1 auto; }
+table.ref .cellule-prix span{ flex:0 0 auto; font-size:.7rem; }
+table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-color:var(--accent); }
+
+.liste-ordre{ list-style:none; margin:0; padding:0; }
+.liste-ordre li{
+  display:flex; align-items:center; gap:.5rem; background:var(--surface);
+  border:1px solid var(--border); border-radius:8px; padding:.3rem .5rem; margin-bottom:.3rem;
+  min-height:var(--tap);
+}
+.liste-ordre li.survol{ border-color:var(--accent); background:var(--accent-doux); }
+.liste-ordre li.drag{ opacity:.5; }
+.liste-ordre .poignee{ cursor:grab; color:var(--texte-doux); font-size:1.1rem; touch-action:none; user-select:none; }
+.liste-ordre .nom{ flex:1; min-width:0; }
+
+/* ——— MODALES, BANDEAUX, TOASTS ——— */
+.fond-modal{
+  position:fixed; inset:0; z-index:100; background:rgba(8,10,14,.5);
+  display:flex; align-items:flex-end; justify-content:center; padding:0;
+}
+@media (min-width:640px){ .fond-modal{ align-items:center; padding:1rem; } }
+.modal{
+  background:var(--surface); color:var(--texte); width:100%; max-width:540px;
+  border-radius:14px 14px 0 0; padding:1rem; max-height:92dvh; overflow:auto;
+  box-shadow:0 -4px 30px rgba(0,0,0,.3); border:1px solid var(--border);
+  padding-bottom:calc(1rem + env(safe-area-inset-bottom));
+}
+@media (min-width:640px){ .modal{ border-radius:14px; padding-bottom:1rem; } }
+.modal h2{ margin-top:0; }
+.modal .actions{ display:flex; gap:.5rem; flex-wrap:wrap; justify-content:flex-end; margin-top:1rem; }
+.modal .actions .btn{ flex:1 1 auto; }
+@media (min-width:640px){ .modal .actions .btn{ flex:0 0 auto; } }
+
+#zone-toasts{
+  position:fixed; z-index:110; left:.5rem; right:.5rem; bottom:calc(72px + env(safe-area-inset-bottom));
+  display:flex; flex-direction:column; gap:.4rem; align-items:center; pointer-events:none;
+}
+@media (min-width:900px){ #zone-toasts{ bottom:1rem; left:auto; right:1rem; align-items:flex-end; } }
+.toast{
+  pointer-events:auto; background:var(--texte); color:var(--bg);
+  border-radius:var(--r); padding:.6rem .8rem; font-size:.92rem; font-weight:600;
+  box-shadow:var(--ombre); display:flex; align-items:center; gap:.75rem; max-width:520px; width:100%;
+}
+.toast button{
+  background:none; border:1px solid currentColor; color:inherit; font:inherit; font-weight:700;
+  border-radius:8px; padding:.25rem .6rem; cursor:pointer; min-height:36px; white-space:nowrap;
+}
+#bandeau-degrade{
+  background:var(--danger-doux); color:var(--danger); border-bottom:1px solid var(--danger);
+  padding:.5rem .75rem; font-size:.88rem; font-weight:600;
+}
+#bandeau-degrade[hidden]{ display:none; }
+.bandeau-exemple{
+  background:var(--accent-doux); border:1px solid transparent; color:var(--accent);
+  border-radius:var(--r); padding:.6rem .7rem; margin-bottom:.6rem;
+  display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; font-size:.9rem; font-weight:600;
+}
+.bandeau-exemple span{ flex:1 1 200px; }
+
+/* ——— IMPRESSION ——— */
+@media print{
+  body{ background:#fff; color:#000; }
+  .topbar,.tabbar,#zone-toasts,.ajout-manuel,.barre-actions,#bandeau-degrade{ display:none !important; }
+  main{ padding:0; max-width:none; }
+  .vue{ display:none !important; }
+  .vue.actif{ display:block !important; }
+  .rayon{ break-inside:avoid; border:1px solid #999; }
+  .rayon > summary{ background:#eee; color:#000; }
+  .article{ font-size:12pt; border-top:1px solid #ccc; }
+  .article.coche .nom,.article.coche .qte{ color:#666; }
+  .detail-provenance{ display:none; }
+}
+</style>
+</head>
+<body>
+<div id="app">
+  <nav class="tabbar" id="tabbar" aria-label="Navigation principale">
+    <button type="button" data-tab="semaine" aria-current="page"><span class="ic" aria-hidden="true">🗓️</span>Semaine</button>
+    <button type="button" data-tab="liste"><span class="ic" aria-hidden="true">🛒</span>Liste</button>
+    <button type="button" data-tab="recettes"><span class="ic" aria-hidden="true">📖</span>Recettes</button>
+    <button type="button" data-tab="reglages"><span class="ic" aria-hidden="true">⚙️</span>Réglages</button>
+  </nav>
+  <div class="colonne-principale">
+    <div id="bandeau-degrade" hidden role="status"></div>
+    <header class="topbar">
+      <h1 class="titre" id="titre-page">Semaine</h1>
+      <span id="entete-extra" class="pt doux"></span>
+    </header>
+    <main>
+      <section class="vue actif" id="vue-semaine" aria-label="Semaine"></section>
+      <section class="vue" id="vue-liste" aria-label="Liste de courses"></section>
+      <section class="vue" id="vue-recettes" aria-label="Recettes"></section>
+      <section class="vue" id="vue-reglages" aria-label="Réglages"></section>
+    </main>
+  </div>
+</div>
+<div id="zone-toasts" aria-live="polite"></div>
+<div id="racine-modale"></div>
+<script>
+"use strict";
+/* =========================================================================
+   Liste de courses — application autonome, un seul fichier, zéro dépendance.
+   Sections : MODÈLE · STOCKAGE · CALCULS · OUTILS UI · VUES · DÉMARRAGE
+   ========================================================================= */
+
+/* ——— MODÈLE ——————————————————————————————————————————————————————————— */
+
+const SCHEMA_VERSION = 1;
+
+const RAYONS = [
+  ['fruits_legumes', 'Fruits & légumes'],
+  ['boucherie',      'Boucherie / Volaille'],
+  ['poissonnerie',   'Poissonnerie'],
+  ['cremerie',       'Crèmerie & œufs'],
+  ['charcuterie',    'Charcuterie / Traiteur'],
+  ['epicerie_salee', 'Épicerie salée'],
+  ['epicerie_sucree','Épicerie sucrée'],
+  ['pain',           'Pain & viennoiserie'],
+  ['surgeles',       'Surgelés'],
+  ['boissons',       'Boissons'],
+  ['hygiene',        'Hygiène & entretien'],
+  ['autre',          'Autre'],
+];
+const RAYON_LIBELLE = Object.fromEntries(RAYONS);
+const RAYONS_IDS = RAYONS.map(function (r) { return r[0]; });
+const ORDRE_RAYONS_DEFAUT = RAYONS_IDS.slice();
+
+// Unités acceptées par famille, avec leur facteur vers l'unité de base.
+// masse → base : le gramme. volume → base : le millilitre. piece → base : la pièce.
+const UNITES = {
+  masse:  [ { u: 'g',  f: 1 }, { u: 'kg', f: 1000 } ],
+  volume: [ { u: 'ml', f: 1 }, { u: 'cl', f: 10 }, { u: 'dl', f: 100 }, { u: 'L', f: 1000 },
+            { u: 'c. à soupe', f: 15 }, { u: 'c. à café', f: 5 } ],
+  piece:  [],   // une seule unité, portée par l'ingrédient (unitePiece)
+};
+const FAMILLES = [
+  ['masse',  'Masse (g, kg)'],
+  ['volume', 'Volume (ml, cl, dl, L, cuillères)'],
+  ['piece',  'Pièce (pièce, gousse, botte…)'],
+];
+const FAMILLE_COURT = { masse: 'masse', volume: 'volume', piece: 'pièce' };
+const UNITES_PIECE_SUGGEREES = ['pièce', 'gousse', 'botte', 'tranche', 'pincée', 'brin', 'feuille', 'sachet', 'boîte', 'tige'];
+const PAR_PRIX_PAR_FAMILLE = { masse: 'kg', volume: 'L', piece: 'piece' };
+const PAR_PRIX_LIBELLE = { kg: '€/kg', L: '€/L', piece: '€/pièce' };
+
+function aujourdHuiISO() {
+  const d = new Date();
+  const p = function (n) { return String(n).padStart(2, '0'); };
+  return d.getFullYear() + '-' + p(d.getMonth() + 1) + '-' + p(d.getDate());
+}
+
+function slug(txt) {
+  return String(txt || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '').slice(0, 32) || 'x';
+}
+function suffixeCourt() {
+  return Math.random().toString(36).slice(2, 6);
+}
+// Identifiants stables et lisibles : préfixe + slug + suffixe aléatoire court.
+function genererId(prefixe, nom) {
+  return prefixe + '_' + slug(nom) + '_' + suffixeCourt();
+}
+
+function donneesVides() {
+  return {
+    schemaVersion: SCHEMA_VERSION,
+    ingredients: [],
+    recettes: [],
+    semaine: {
+      libelle: libelleSemaineCourante(),
+      selection: [],
+      coches: {},
+      ajoutsManuels: [],
+      dateModification: new Date().toISOString(),
+    },
+    historique: [],
+    semainesTypes: [],
+    reglages: {
+      ordreRayons: ORDRE_RAYONS_DEFAUT.slice(),
+      afficherPrix: true,
+      theme: 'auto',
+    },
+  };
+}
+
+const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
+function libelleSemaineCourante() {
+  // Lundi de la semaine en cours.
+  const d = new Date();
+  const jour = (d.getDay() + 6) % 7;
+  d.setDate(d.getDate() - jour);
+  return 'Semaine du ' + d.getDate() + ' ' + MOIS[d.getMonth()];
+}
+
+/* --- Jeu de données d'exemple (effaçable en un clic au premier lancement) --- */
+const IDS_EXEMPLE_RECETTES = ['rec_chili', 'rec_ratatouille', 'rec_pates_pesto'];
+
+function ing(id, nom, rayon, famille, opts) {
+  opts = opts || {};
+  return {
+    id: id, nom: nom, aliases: opts.aliases || [], rayon: rayon, famille: famille,
+    unitePiece: famille === 'piece' ? (opts.unitePiece || 'pièce') : null,
+    prix: opts.prix === undefined ? { valeur: null, par: PAR_PRIX_PAR_FAMILLE[famille] } : opts.prix,
+    placard: !!opts.placard,
+  };
+}
+
+function donneesExemple() {
+  const d = donneesVides();
+  d.ingredients = [
+    ing('ing_tomate_concassee', 'Tomates concassées', 'epicerie_salee', 'masse',
+        { aliases: ['tomate concassée', 'pulpe de tomate'], prix: { valeur: 2.40, par: 'kg' } }),
+    ing('ing_haricot_rouge', 'Haricots rouges', 'epicerie_salee', 'masse', { prix: { valeur: 3.20, par: 'kg' } }),
+    ing('ing_riz', 'Riz', 'epicerie_salee', 'masse', { prix: { valeur: 2.10, par: 'kg' } }),
+    ing('ing_pates', 'Pâtes', 'epicerie_salee', 'masse', { aliases: ['penne', 'spaghetti'], prix: { valeur: 1.80, par: 'kg' } }),
+    ing('ing_pesto', 'Pesto', 'epicerie_salee', 'masse', { prix: { valeur: 12.00, par: 'kg' } }),
+    ing('ing_parmesan', 'Parmesan', 'cremerie', 'masse', { prix: { valeur: 22.00, par: 'kg' } }),
+    ing('ing_oignon', 'Oignon', 'fruits_legumes', 'piece', { unitePiece: 'pièce', prix: { valeur: 0.35, par: 'piece' } }),
+    ing('ing_poivron_rouge', 'Poivron rouge', 'fruits_legumes', 'piece', { unitePiece: 'pièce', prix: { valeur: 1.20, par: 'piece' } }),
+    ing('ing_courgette', 'Courgette', 'fruits_legumes', 'piece', { unitePiece: 'pièce', prix: { valeur: 0.90, par: 'piece' } }),
+    ing('ing_aubergine', 'Aubergine', 'fruits_legumes', 'piece', { unitePiece: 'pièce', prix: { valeur: 1.40, par: 'piece' } }),
+    ing('ing_ail', 'Ail', 'fruits_legumes', 'piece', { unitePiece: 'gousse', prix: { valeur: 0.10, par: 'piece' } }),
+    ing('ing_basilic', 'Basilic frais', 'fruits_legumes', 'piece', { unitePiece: 'botte', prix: { valeur: 1.50, par: 'piece' } }),
+    ing('ing_huile_olive', "Huile d'olive", 'epicerie_salee', 'volume', { placard: true, prix: { valeur: 8.50, par: 'L' } }),
+    ing('ing_sel', 'Sel', 'epicerie_salee', 'piece', { placard: true, unitePiece: 'pincée', prix: { valeur: null, par: 'piece' } }),
+    ing('ing_cumin', 'Cumin moulu', 'epicerie_salee', 'piece', { placard: true, unitePiece: 'pincée', prix: { valeur: null, par: 'piece' } }),
+    ing('ing_herbes_provence', 'Herbes de Provence', 'epicerie_salee', 'piece', { placard: true, unitePiece: 'pincée', prix: { valeur: null, par: 'piece' } }),
+  ];
+  d.recettes = [
+    {
+      id: 'rec_chili', nom: 'Chili sin carne', tags: ['végétarien', 'rapide'],
+      tempsPreparationMin: 35, portionsDefaut: 4, derniereUtilisation: null,
+      notes: "Faire revenir l'oignon et le poivron, ajouter les épices, les tomates puis les haricots. Mijoter 25 min. Servir avec le riz.",
+      lignes: [
+        { ingredientId: 'ing_tomate_concassee', quantite: 0.2, unite: 'kg', fixe: false },
+        { ingredientId: 'ing_haricot_rouge', quantite: 90, unite: 'g', fixe: false },
+        { ingredientId: 'ing_riz', quantite: 60, unite: 'g', fixe: false },
+        { ingredientId: 'ing_poivron_rouge', quantite: 0.5, unite: 'pièce', fixe: false },
+        { ingredientId: 'ing_oignon', quantite: 1, unite: 'pièce', fixe: true },
+        { ingredientId: 'ing_cumin', quantite: 1, unite: 'pincée', fixe: true },
+        { ingredientId: 'ing_huile_olive', quantite: 5, unite: 'ml', fixe: false },
+      ],
+    },
+    {
+      id: 'rec_ratatouille', nom: 'Ratatouille', tags: ['végétarien'],
+      tempsPreparationMin: 50, portionsDefaut: 4, derniereUtilisation: null,
+      notes: 'Couper les légumes en cubes réguliers, les cuire séparément puis les réunir 10 min.',
+      lignes: [
+        { ingredientId: 'ing_tomate_concassee', quantite: 150, unite: 'g', fixe: false },
+        { ingredientId: 'ing_courgette', quantite: 0.5, unite: 'pièce', fixe: false },
+        { ingredientId: 'ing_aubergine', quantite: 0.5, unite: 'pièce', fixe: false },
+        { ingredientId: 'ing_oignon', quantite: 1, unite: 'pièce', fixe: true },
+        { ingredientId: 'ing_ail', quantite: 1, unite: 'gousse', fixe: false },
+        { ingredientId: 'ing_huile_olive', quantite: 10, unite: 'ml', fixe: false },
+        { ingredientId: 'ing_herbes_provence', quantite: 1, unite: 'pincée', fixe: true },
+        { ingredientId: 'ing_sel', quantite: 1, unite: 'pincée', fixe: true },
+      ],
+    },
+    {
+      id: 'rec_pates_pesto', nom: 'Pâtes au pesto', tags: ['rapide', 'végétarien'],
+      tempsPreparationMin: 15, portionsDefaut: 2, derniereUtilisation: null,
+      notes: 'Cuire les pâtes, détendre le pesto avec un peu d\'eau de cuisson, mélanger hors du feu.',
+      lignes: [
+        { ingredientId: 'ing_pates', quantite: 100, unite: 'g', fixe: false },
+        { ingredientId: 'ing_pesto', quantite: 30, unite: 'g', fixe: false },
+        { ingredientId: 'ing_parmesan', quantite: 15, unite: 'g', fixe: false },
+        { ingredientId: 'ing_basilic', quantite: 1, unite: 'botte', fixe: true },
+        { ingredientId: 'ing_sel', quantite: 1, unite: 'pincée', fixe: true },
+      ],
+    },
+  ];
+  return d;
+}
+
+/* --- Normalisation défensive : toute racine chargée passe par ici --- */
+function normaliserRacine(d) {
+  const base = donneesVides();
+  if (!d || typeof d !== 'object') return base;
+  const out = base;
+  out.schemaVersion = SCHEMA_VERSION;
+
+  out.ingredients = (Array.isArray(d.ingredients) ? d.ingredients : []).map(function (i) {
+    const famille = (i && ['masse', 'volume', 'piece'].indexOf(i.famille) >= 0) ? i.famille : 'masse';
+    const prix = (i && i.prix && typeof i.prix === 'object') ? i.prix : {};
+    return {
+      id: (i && i.id) || genererId('ing', (i && i.nom) || 'ingredient'),
+      nom: String((i && i.nom) || 'Sans nom'),
+      aliases: Array.isArray(i && i.aliases) ? i.aliases.map(String) : [],
+      rayon: (i && RAYON_LIBELLE[i.rayon]) ? i.rayon : 'autre',
+      famille: famille,
+      unitePiece: famille === 'piece' ? (i.unitePiece || 'pièce') : null,
+      prix: {
+        valeur: (typeof prix.valeur === 'number' && isFinite(prix.valeur)) ? prix.valeur : null,
+        par: PAR_PRIX_PAR_FAMILLE[famille],
+      },
+      placard: !!(i && i.placard),
+    };
+  });
+  const idsIng = new Set(out.ingredients.map(function (i) { return i.id; }));
+
+  out.recettes = (Array.isArray(d.recettes) ? d.recettes : []).map(function (r) {
+    return {
+      id: (r && r.id) || genererId('rec', (r && r.nom) || 'recette'),
+      nom: String((r && r.nom) || 'Sans nom'),
+      tags: Array.isArray(r && r.tags) ? r.tags.map(String) : [],
+      tempsPreparationMin: (typeof (r && r.tempsPreparationMin) === 'number') ? r.tempsPreparationMin : null,
+      portionsDefaut: (typeof (r && r.portionsDefaut) === 'number' && r.portionsDefaut > 0) ? r.portionsDefaut : 4,
+      derniereUtilisation: (r && r.derniereUtilisation) || null,
+      notes: String((r && r.notes) || ''),
+      lignes: (Array.isArray(r && r.lignes) ? r.lignes : [])
+        .filter(function (l) { return l && idsIng.has(l.ingredientId); })
+        .map(function (l) {
+          return {
+            ingredientId: l.ingredientId,
+            quantite: (typeof l.quantite === 'number' && isFinite(l.quantite)) ? l.quantite : 0,
+            unite: String(l.unite || ''),
+            fixe: !!l.fixe,
+          };
+        }),
+    };
+  });
+  const idsRec = new Set(out.recettes.map(function (r) { return r.id; }));
+
+  const s = (d.semaine && typeof d.semaine === 'object') ? d.semaine : {};
+  out.semaine = {
+    libelle: String(s.libelle || libelleSemaineCourante()),
+    selection: nettoyerSelection(s.selection, idsRec),
+    coches: (s.coches && typeof s.coches === 'object') ? Object.assign({}, s.coches) : {},
+    ajoutsManuels: (Array.isArray(s.ajoutsManuels) ? s.ajoutsManuels : []).map(function (a, n) {
+      return {
+        id: (a && a.id) || ('man_' + suffixeCourt() + n),
+        nom: String((a && a.nom) || ''),
+        rayon: (a && RAYON_LIBELLE[a.rayon]) ? a.rayon : 'autre',
+        quantite: (a && typeof a.quantite === 'number') ? a.quantite : null,
+        unite: (a && a.unite) ? String(a.unite) : null,
+      };
+    }).filter(function (a) { return a.nom.trim() !== ''; }),
+    dateModification: String(s.dateModification || new Date().toISOString()),
+  };
+
+  out.historique = (Array.isArray(d.historique) ? d.historique : []).map(function (h) {
+    return {
+      date: String((h && h.date) || aujourdHuiISO()),
+      libelle: (h && h.libelle) ? String(h.libelle) : null,
+      selection: nettoyerSelection(h && h.selection, idsRec),
+      coutEstime: (typeof (h && h.coutEstime) === 'number') ? h.coutEstime : 0,
+    };
+  });
+
+  out.semainesTypes = (Array.isArray(d.semainesTypes) ? d.semainesTypes : []).map(function (t) {
+    return {
+      id: (t && t.id) || genererId('st', (t && t.nom) || 'type'),
+      nom: String((t && t.nom) || 'Semaine type'),
+      selection: nettoyerSelection(t && t.selection, idsRec),
+    };
+  });
+
+  const g = (d.reglages && typeof d.reglages === 'object') ? d.reglages : {};
+  let ordre = Array.isArray(g.ordreRayons) ? g.ordreRayons.filter(function (r) { return RAYON_LIBELLE[r]; }) : [];
+  ordre = ordre.concat(RAYONS_IDS.filter(function (r) { return ordre.indexOf(r) < 0; }));
+  out.reglages = {
+    ordreRayons: ordre,
+    afficherPrix: g.afficherPrix !== false,
+    theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
+  };
+  return out;
+}
+
+function nettoyerSelection(sel, idsRec) {
+  const vus = new Set();
+  return (Array.isArray(sel) ? sel : []).filter(function (s) {
+    if (!s || !s.recetteId) return false;
+    if (idsRec && !idsRec.has(s.recetteId)) return false;
+    if (vus.has(s.recetteId)) return false;
+    vus.add(s.recetteId); return true;
+  }).map(function (s) {
+    return {
+      recetteId: s.recetteId,
+      portions: (typeof s.portions === 'number' && s.portions > 0) ? Math.min(99, Math.round(s.portions)) : 4,
+    };
+  });
+}
+
+// Prévue dès la V1 même si elle ne fait rien : contrôle de schemaVersion au chargement.
+function migrate(donnees) {
+  if (!donnees || typeof donnees !== 'object') throw new Error('Données illisibles');
+  let d = donnees;
+  let v = (typeof d.schemaVersion === 'number') ? d.schemaVersion : 1;
+  while (v < SCHEMA_VERSION) {
+    // switch (v) { case 1: d = migrer1vers2(d); break; }
+    v += 1;
+  }
+  if (v > SCHEMA_VERSION) throw new Error('Fichier créé par une version plus récente de l\'application (schéma ' + v + ').');
+  d.schemaVersion = SCHEMA_VERSION;
+  return normaliserRacine(d);
+}
+
+/* ——— STOCKAGE ————————————————————————————————————————————————————————————
+   Point critique de l'architecture. C'est le SEUL endroit du fichier qui
+   touche au stockage du navigateur. Toute l'interface est asynchrone : la V2
+   pourra remplacer l'implémentation par une base synchronisée sans qu'une
+   seule ligne d'appelant ne change.
+   ------------------------------------------------------------------------- */
+const Store = (function () {
+  const CLE = 'listeCourses.v1';
+  const DEBOUNCE_MS = 400;
+
+  let racine = null;          // objet racine en mémoire (source de vérité de la session)
+  let minuteur = null;        // écriture différée
+  let modeMemoire = false;    // true si l'écriture est impossible dans ce navigateur
+  let auxPannes = null;       // callback d'information de l'interface
+
+  function lireBrut() {
+    try {
+      return localStorage.getItem(CLE);
+    } catch (e) {
+      modeMemoire = true;
+      if (auxPannes) auxPannes(e);
+      return null;
+    }
+  }
+  function ecrireBrut(texte) {
+    try {
+      localStorage.setItem(CLE, texte);
+      return true;
+    } catch (e) {
+      modeMemoire = true;
+      if (auxPannes) auxPannes(e);
+      return false;
+    }
+  }
+  function effacerBrut() {
+    try {
+      localStorage.removeItem(CLE);
+    } catch (e) {
+      modeMemoire = true;
+      if (auxPannes) auxPannes(e);
+    }
+  }
+
+  function ecrireMaintenant() {
+    if (minuteur) { clearTimeout(minuteur); minuteur = null; }
+    if (racine === null) return;
+    let texte;
+    try { texte = JSON.stringify(racine); }
+    catch (e) { if (auxPannes) auxPannes(e); return; }
+    ecrireBrut(texte);
+  }
+  function programmerEcriture() {
+    if (minuteur) clearTimeout(minuteur);
+    minuteur = setTimeout(ecrireMaintenant, DEBOUNCE_MS);
+  }
+
+  return {
+    /** → l'objet racine complet, ou null si rien n'a encore été stocké. */
+    async load() {
+      const texte = lireBrut();
+      if (texte === null || texte === '') return null;
+      let brut;
+      try { brut = JSON.parse(texte); }
+      catch (e) { if (auxPannes) auxPannes(e); return null; }
+      try { racine = migrate(brut); }
+      catch (e) { if (auxPannes) auxPannes(e); return null; }
+      return racine;
+    },
+
+    /** Remplace l'objet racine. L'écriture est différée (400 ms). */
+    async save(donnees) {
+      racine = donnees;
+      programmerEcriture();
+      return racine;
+    },
+
+    /** Écriture ciblée : patch('semaine.coches.ing_riz', true). */
+    async patch(chemin, valeur) {
+      if (racine === null) return null;
+      const parts = String(chemin).split('.');
+      let noeud = racine;
+      for (let i = 0; i < parts.length - 1; i++) {
+        if (noeud[parts[i]] === undefined || noeud[parts[i]] === null) noeud[parts[i]] = {};
+        noeud = noeud[parts[i]];
+      }
+      if (valeur === undefined) delete noeud[parts[parts.length - 1]];
+      else noeud[parts[parts.length - 1]] = valeur;
+      programmerEcriture();
+      return racine;
+    },
+
+    /** → chaîne JSON lisible. */
+    async export() {
+      return JSON.stringify(racine, null, 2);
+    },
+
+    /** Valide, migre si besoin, remplace. Écrit immédiatement. */
+    async import(json) {
+      let brut;
+      if (typeof json === 'string') {
+        try { brut = JSON.parse(json); }
+        catch (e) { throw new Error('Fichier illisible : ce n\'est pas du JSON valide.'); }
+      } else {
+        brut = json;
+      }
+      if (!brut || typeof brut !== 'object' || !Array.isArray(brut.ingredients) || !Array.isArray(brut.recettes)) {
+        throw new Error('Fichier inattendu : il ne contient ni « ingredients » ni « recettes ».');
+      }
+      racine = migrate(brut);
+      ecrireMaintenant();
+      return racine;
+    },
+
+    /** Force l'écriture différée en attente (fermeture d'onglet, export…). */
+    async flush() { ecrireMaintenant(); },
+
+    /** Efface tout le contenu stocké et repart de zéro. */
+    async reset(donnees) {
+      racine = donnees || null;
+      if (racine === null) { effacerBrut(); return null; }
+      ecrireMaintenant();
+      return racine;
+    },
+
+    /** true si ce navigateur refuse d'écrire (navigation privée, quota, stockage bloqué). */
+    modeMemoire() { return modeMemoire; },
+
+    /** Branche l'interface sur les pannes de stockage. */
+    surPanne(cb) { auxPannes = cb; },
+  };
+})();
+
+/* ——— CALCULS ————————————————————————————————————————————————————————————
+   Fonctions pures : elles ne lisent que leurs arguments et ne touchent ni au
+   DOM ni au stockage. Elles sont donc testables isolément.
+   ------------------------------------------------------------------------- */
+
+/** Unités proposées à la saisie pour un ingrédient. Les familles sont étanches. */
+function unitesDe(ingredient) {
+  if (!ingredient) return [];
+  if (ingredient.famille === 'piece') return [ingredient.unitePiece || 'pièce'];
+  return UNITES[ingredient.famille].map(function (x) { return x.u; });
+}
+
+/** Facteur de conversion d'une unité vers l'unité de base de sa famille. */
+function facteurUnite(famille, unite) {
+  if (famille === 'piece') return 1;
+  const table = UNITES[famille] || [];
+  for (let i = 0; i < table.length; i++) if (table[i].u === unite) return table[i].f;
+  return null;   // unité étrangère à la famille
+}
+
+/** Quantité saisie → quantité en unité de base (g, ml ou pièce). */
+function versBase(quantite, unite, famille) {
+  const f = facteurUnite(famille, unite);
+  return (typeof quantite === 'number' && isFinite(quantite)) ? quantite * (f === null ? 1 : f) : 0;
+}
+
+/** Prix ramené à l'unité de base : €/g, €/ml ou €/pièce. null si prix inconnu. */
+function prixParUniteBase(ingredient) {
+  if (!ingredient || !ingredient.prix) return null;
+  const v = ingredient.prix.valeur;
+  if (typeof v !== 'number' || !isFinite(v)) return null;
+  const par = ingredient.prix.par || PAR_PRIX_PAR_FAMILLE[ingredient.famille];
+  if (par === 'kg' || par === 'L') return v / 1000;
+  if (par === 'piece') return v;
+  return null;
+}
+
+/* --- Formatage --- */
+function formatNombre(n, maxDec) {
+  if (typeof n !== 'number' || !isFinite(n)) return '—';
+  const d = (maxDec === undefined) ? 2 : maxDec;
+  let s = n.toFixed(d);
+  if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
+  return s.replace('.', ',');
+}
+function formatEuroFixe(n) {
+  if (typeof n !== 'number' || !isFinite(n)) return '—';
+  return n.toFixed(2).replace('.', ',') + ' €';
+}
+// Le « h » français ne se laisse pas deviner : « d'huile » mais « de haricots ».
+// Faute de dictionnaire, on liste les h muets qu'on croise en cuisine et on
+// considère tous les autres comme aspirés.
+const H_MUET = ['huile', 'herbe', 'huitre', 'hysope', 'haché', 'hache'];
+/** Élision devant une voyelle : « de tomates », mais « d'œufs ». */
+function elision(nom) {
+  const n = String(nom || '');
+  const norm = normaliserNom(n);
+  if (/^h/i.test(norm)) {
+    return H_MUET.some(function (m) { return norm.indexOf(normaliserNom(m)) === 0; }) ? "d'" + n : 'de ' + n;
+  }
+  return /^[aeiouyàâäéèêëiïîoôöuùûüœ]/i.test(n) ? "d'" + n : 'de ' + n;
+}
+/** Accord au pluriel des unités « pièce » : 3 gousses, 1 gousse, 0,5 gousse. */
+function pluriel(mot, n) {
+  const m = String(mot || 'pièce');
+  if (!(n > 1)) return m;
+  if (/[sxz]$/i.test(m)) return m;
+  return m + 's';
+}
+/** Quantité en unité de base → texte affiché. La conversion n'a lieu qu'ici. */
+function formatQuantiteBase(base, ingredient) {
+  if (!ingredient) return formatNombre(base);
+  if (ingredient.famille === 'masse') {
+    return base >= 1000 ? formatNombre(base / 1000, 2) + ' kg' : formatNombre(base, 2) + ' g';
+  }
+  if (ingredient.famille === 'volume') {
+    return base >= 1000 ? formatNombre(base / 1000, 2) + ' L' : formatNombre(base, 2) + ' ml';
+  }
+  return formatNombre(base, 2) + ' ' + pluriel(ingredient.unitePiece || 'pièce', base);
+}
+
+/* --- Rapprochement de noms (§4.3) --- */
+function normaliserNom(txt) {
+  return String(txt || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+/** Singulier approximatif : « tomates cerises » → « tomate cerise ». */
+function singulierApprox(txt) {
+  return normaliserNom(txt).split(' ').map(function (m) {
+    if (m.length > 3 && /(?:aux|eaux)$/.test(m)) return m.replace(/(?:aux|eaux)$/, function (s) { return s === 'aux' ? 'al' : 'eau'; });
+    if (m.length > 3 && /s$/.test(m)) return m.slice(0, -1);
+    return m;
+  }).join(' ');
+}
+function distanceLev(a, b) {
+  if (a === b) return 0;
+  const m = a.length, n = b.length;
+  if (m === 0) return n;
+  if (n === 0) return m;
+  let prec = new Array(n + 1);
+  for (let j = 0; j <= n; j++) prec[j] = j;
+  for (let i = 1; i <= m; i++) {
+    let cour = [i];
+    for (let j = 1; j <= n; j++) {
+      cour[j] = Math.min(prec[j] + 1, cour[j - 1] + 1, prec[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prec = cour;
+  }
+  return prec[n];
+}
+/** Score de ressemblance entre 0 et 1 sur deux noms d'ingrédients. */
+function ressemblance(a, b) {
+  const na = singulierApprox(a), nb = singulierApprox(b);
+  if (!na || !nb) return 0;
+  if (na === nb) return 1;
+  if (na.indexOf(nb) === 0 || nb.indexOf(na) === 0) return 0.9;
+  if (na.indexOf(nb) >= 0 || nb.indexOf(na) >= 0) return 0.8;
+  const d = distanceLev(na, nb);
+  const max = Math.max(na.length, nb.length);
+  let score = Math.max(0, 1 - d / max);
+  // Premier mot identique (« tomate concassee » / « tomate cerise ») : on pose la
+  // question. Une proposition de fusion inutile coûte un clic, un doublon
+  // silencieux pollue le référentiel pour toujours.
+  const ta = na.split(' ')[0], tb = nb.split(' ')[0];
+  if (ta === tb && ta.length >= 4) score = Math.max(score, 0.8);
+  return score;
+}
+/** Ingrédients du référentiel ressemblant au nom saisi, du plus proche au moins proche. */
+function trouverSimilaires(ingredients, nom, seuil) {
+  const s = (seuil === undefined) ? 0.78 : seuil;
+  const res = [];
+  for (let i = 0; i < ingredients.length; i++) {
+    const ing = ingredients[i];
+    let score = ressemblance(nom, ing.nom);
+    for (let a = 0; a < ing.aliases.length; a++) {
+      score = Math.max(score, ressemblance(nom, ing.aliases[a]));
+    }
+    if (score >= s) res.push({ ingredient: ing, score: score });
+  }
+  res.sort(function (x, y) { return y.score - x.score; });
+  return res;
+}
+
+/* --- Agrégation de la semaine (§4.2) --- */
+
+function indexIngredients(donnees) {
+  const map = new Map();
+  for (let i = 0; i < donnees.ingredients.length; i++) map.set(donnees.ingredients[i].id, donnees.ingredients[i]);
+  return map;
+}
+function indexRecettes(donnees) {
+  const map = new Map();
+  for (let i = 0; i < donnees.recettes.length; i++) map.set(donnees.recettes[i].id, donnees.recettes[i]);
+  return map;
+}
+
+/**
+ * Agrège une sélection de recettes en lignes de liste.
+ * Chaque ligne conserve sa provenance recette par recette.
+ * → { lignes:[{ingredient, base, cout, provenance:[{recetteId,nom,base}]}] }
+ */
+function agregerSelection(donnees, selection) {
+  const parIng = indexIngredients(donnees);
+  const parRec = indexRecettes(donnees);
+  const cumul = new Map();
+
+  for (let s = 0; s < selection.length; s++) {
+    const sel = selection[s];
+    const rec = parRec.get(sel.recetteId);
+    if (!rec) continue;
+    const portions = (typeof sel.portions === 'number' && sel.portions > 0) ? sel.portions : 1;
+    for (let l = 0; l < rec.lignes.length; l++) {
+      const ligne = rec.lignes[l];
+      const ing = parIng.get(ligne.ingredientId);
+      if (!ing) continue;
+      const base = versBase(ligne.quantite, ligne.unite, ing.famille) * (ligne.fixe ? 1 : portions);
+      if (!(base > 0)) continue;
+      let entree = cumul.get(ing.id);
+      if (!entree) {
+        entree = { ingredient: ing, base: 0, provenance: [] };
+        cumul.set(ing.id, entree);
+      }
+      entree.base += base;
+      const dejaVu = entree.provenance.find(function (p) { return p.recetteId === rec.id; });
+      if (dejaVu) dejaVu.base += base;
+      else entree.provenance.push({ recetteId: rec.id, nom: rec.nom, base: base });
+    }
+  }
+
+  const lignes = Array.from(cumul.values());
+  for (let i = 0; i < lignes.length; i++) {
+    const pu = prixParUniteBase(lignes[i].ingredient);
+    lignes[i].cout = (pu === null) ? null : lignes[i].base * pu;
+  }
+  lignes.sort(function (a, b) { return a.ingredient.nom.localeCompare(b.ingredient.nom, 'fr'); });
+  return { lignes: lignes };
+}
+
+/** Coût total d'une sélection (hors produits de placard, prix manquants ignorés). */
+function coutSelection(donnees, selection) {
+  const agr = agregerSelection(donnees, selection);
+  let total = 0, sansPrix = 0;
+  for (let i = 0; i < agr.lignes.length; i++) {
+    const l = agr.lignes[i];
+    if (l.ingredient.placard) continue;
+    if (l.cout === null) sansPrix += 1; else total += l.cout;
+  }
+  return { total: total, sansPrix: sansPrix };
+}
+
+/** Coût d'une recette pour un nombre de portions donné, et coût par portion. */
+function coutRecette(donnees, recette, portions) {
+  const p = (typeof portions === 'number' && portions > 0) ? portions : (recette.portionsDefaut || 4);
+  const c = coutSelection(donnees, [{ recetteId: recette.id, portions: p }]);
+  return { total: c.total, parPortion: c.total / p, sansPrix: c.sansPrix, portions: p };
+}
+
+/**
+ * Construit le modèle de vue de la liste de courses : lignes agrégées,
+ * articles manuels, regroupement par rayon dans l'ordre de l'utilisateur,
+ * section placard à part, et tous les totaux.
+ */
+function construireListe(donnees) {
+  const agr = agregerSelection(donnees, donnees.semaine.selection);
+  const coches = donnees.semaine.coches || {};
+  const articles = [];   // hors placard
+  const placard = [];
+
+  for (let i = 0; i < agr.lignes.length; i++) {
+    const l = agr.lignes[i];
+    const art = {
+      cle: l.ingredient.id,
+      type: 'ingredient',
+      nom: l.ingredient.nom,
+      rayon: l.ingredient.rayon || 'autre',
+      ingredient: l.ingredient,
+      base: l.base,
+      texteQuantite: formatQuantiteBase(l.base, l.ingredient),
+      cout: l.cout,
+      provenance: l.provenance,
+      coche: !!coches[l.ingredient.id],
+    };
+    if (l.ingredient.placard) placard.push(art); else articles.push(art);
+  }
+
+  const manuels = donnees.semaine.ajoutsManuels || [];
+  for (let i = 0; i < manuels.length; i++) {
+    const m = manuels[i];
+    articles.push({
+      cle: m.id,
+      type: 'manuel',
+      nom: m.nom,
+      rayon: m.rayon || 'autre',
+      ingredient: null,
+      base: null,
+      texteQuantite: (typeof m.quantite === 'number' && m.quantite) ? (formatNombre(m.quantite, 2) + (m.unite ? ' ' + m.unite : '')) : '',
+      cout: null,
+      provenance: null,
+      coche: !!coches[m.id],
+      manuel: m,
+    });
+  }
+
+  // Totaux
+  let totalTous = 0, totalRestant = 0, sansPrixTous = 0, sansPrixRestant = 0, nbCoches = 0;
+  for (let i = 0; i < articles.length; i++) {
+    const a = articles[i];
+    if (a.coche) nbCoches += 1;
+    if (a.cout === null) {
+      if (a.type === 'ingredient') { sansPrixTous += 1; if (!a.coche) sansPrixRestant += 1; }
+    } else {
+      totalTous += a.cout;
+      if (!a.coche) totalRestant += a.cout;
+    }
+  }
+
+  // Regroupement par rayon, dans l'ordre choisi par l'utilisateur.
+  const ordre = donnees.reglages.ordreRayons;
+  const parRayon = new Map();
+  for (let i = 0; i < articles.length; i++) {
+    const a = articles[i];
+    const r = RAYON_LIBELLE[a.rayon] ? a.rayon : 'autre';
+    if (!parRayon.has(r)) parRayon.set(r, []);
+    parRayon.get(r).push(a);
+  }
+  const groupes = [];
+  const rayonsTries = ordre.filter(function (r) { return parRayon.has(r); })
+    .concat(Array.from(parRayon.keys()).filter(function (r) { return ordre.indexOf(r) < 0; }));
+  for (let i = 0; i < rayonsTries.length; i++) {
+    const r = rayonsTries[i];
+    const liste = parRayon.get(r);
+    // Non cochés d'abord (alphabétique), cochés repoussés en bas du rayon.
+    liste.sort(function (a, b) {
+      if (a.coche !== b.coche) return a.coche ? 1 : -1;
+      return a.nom.localeCompare(b.nom, 'fr');
+    });
+    const nbCoche = liste.filter(function (a) { return a.coche; }).length;
+    groupes.push({
+      rayon: r,
+      libelle: RAYON_LIBELLE[r] || 'Autre',
+      articles: liste,
+      nbCoches: nbCoche,
+      tousCoches: liste.length > 0 && nbCoche === liste.length,
+    });
+  }
+
+  placard.sort(function (a, b) { return a.nom.localeCompare(b.nom, 'fr'); });
+
+  return {
+    groupes: groupes,
+    articles: articles,
+    placard: placard,
+    totaux: {
+      nbArticles: articles.length,
+      nbCoches: nbCoches,
+      totalTous: totalTous,
+      totalRestant: totalRestant,
+      sansPrixTous: sansPrixTous,
+      sansPrixRestant: sansPrixRestant,
+    },
+  };
+}
+
+/** Jours écoulés depuis une date ISO (aaaa-mm-jj). null si absente. */
+function joursDepuis(dateISO) {
+  if (!dateISO) return null;
+  const d = new Date(dateISO + (dateISO.length === 10 ? 'T00:00:00' : ''));
+  if (isNaN(d.getTime())) return null;
+  const auj = new Date(); auj.setHours(0, 0, 0, 0);
+  return Math.round((auj - d) / 86400000);
+}
+function texteFraicheur(dateISO) {
+  const j = joursDepuis(dateISO);
+  if (j === null || j < 0 || j > 14) return null;
+  if (j === 0) return "faite aujourd'hui";
+  if (j === 1) return 'faite hier';
+  return 'faite il y a ' + j + ' jours';
+}
+function formatDateCourte(dateISO) {
+  if (!dateISO) return '';
+  const d = new Date(dateISO + (dateISO.length === 10 ? 'T00:00:00' : ''));
+  if (isNaN(d.getTime())) return dateISO;
+  return d.getDate() + ' ' + MOIS[d.getMonth()] + ' ' + d.getFullYear();
+}
+
+/** Texte de total tenant compte des prix manquants (§4.4). */
+function texteTotal(total, sansPrix) {
+  const base = formatEuroFixe(total);
+  if (!sansPrix) return base;
+  return '≥ ' + base + ' (' + sansPrix + ' ingrédient' + (sansPrix > 1 ? 's' : '') + ' sans prix)';
+}
+
+/* ——— OUTILS UI ——————————————————————————————————————————————————————————
+   Aucune boîte de dialogue native : toasts, bandeau d'annulation et modales
+   sont des composants intégrés, non bloquants.
+   ------------------------------------------------------------------------- */
+
+const $ = function (sel, racine) { return (racine || document).querySelector(sel); };
+const $$ = function (sel, racine) { return Array.prototype.slice.call((racine || document).querySelectorAll(sel)); };
+
+function esc(txt) {
+  return String(txt === null || txt === undefined ? '' : txt)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+function el(tag, attrs, enfants) {
+  const n = document.createElement(tag);
+  if (attrs) {
+    for (const k in attrs) {
+      if (k === 'class') n.className = attrs[k];
+      else if (k === 'html') n.innerHTML = attrs[k];
+      else if (k === 'text') n.textContent = attrs[k];
+      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), attrs[k]);
+      else if (attrs[k] === true) n.setAttribute(k, '');
+      else if (attrs[k] !== false && attrs[k] !== null && attrs[k] !== undefined) n.setAttribute(k, attrs[k]);
+    }
+  }
+  (enfants || []).forEach(function (c) {
+    if (c === null || c === undefined || c === false) return;
+    n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c);
+  });
+  return n;
+}
+function parseNombre(txt) {
+  if (txt === null || txt === undefined) return null;
+  const s = String(txt).trim().replace(',', '.').replace(/\s/g, '');
+  if (s === '') return null;
+  const n = Number(s);
+  return isFinite(n) ? n : null;
+}
+
+/* --- Toasts et bandeau d'annulation (5 s) --- */
+function toast(message, options) {
+  const opt = options || {};
+  const zone = $('#zone-toasts');
+  const boite = el('div', { class: 'toast', role: 'status' }, [el('span', { text: message })]);
+  let minuteur = null;
+  const fermer = function () { if (minuteur) clearTimeout(minuteur); if (boite.parentNode) boite.remove(); };
+  if (opt.actionLabel && opt.onAction) {
+    boite.appendChild(el('button', {
+      type: 'button',
+      text: opt.actionLabel,
+      onclick: function () { fermer(); opt.onAction(); },
+    }));
+  }
+  zone.appendChild(boite);
+  minuteur = setTimeout(fermer, opt.duree || 4000);
+  return fermer;
+}
+/** Suppression annulable pendant 5 secondes. */
+function supprimerAvecAnnulation(libelle, restaurer) {
+  toast(libelle + ' — supprimé', { duree: 5000, actionLabel: 'Annuler', onAction: restaurer });
+}
+
+/* --- Modale --- */
+let modaleOuverte = null;
+function fermerModale() {
+  if (!modaleOuverte) return;
+  const m = modaleOuverte;
+  modaleOuverte = null;
+  m.fond.remove();
+  document.removeEventListener('keydown', m.onKey, true);
+  if (m.focusPrecedent && m.focusPrecedent.focus) { try { m.focusPrecedent.focus(); } catch (e) {} }
+}
+/**
+ * ouvrirModale({ titre, corps:[Node], actions:[{label,variant,onClick,fermer}] })
+ * onClick reçoit une fonction « fermer ». Retourne l'élément .modal.
+ */
+function ouvrirModale(cfg) {
+  fermerModale();
+  const focusPrecedent = document.activeElement;
+  const boite = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': cfg.titre || 'Fenêtre' });
+  if (cfg.titre) boite.appendChild(el('h2', { text: cfg.titre }));
+  (cfg.corps || []).forEach(function (c) { boite.appendChild(c); });
+  const actions = el('div', { class: 'actions' });
+  (cfg.actions || []).forEach(function (a) {
+    actions.appendChild(el('button', {
+      type: 'button', class: 'btn ' + (a.variant || ''), text: a.label,
+      onclick: function () { a.onClick ? a.onClick(fermerModale) : fermerModale(); },
+    }));
+  });
+  if ((cfg.actions || []).length) boite.appendChild(actions);
+  const fond = el('div', { class: 'fond-modal' }, [boite]);
+  fond.addEventListener('mousedown', function (ev) { if (ev.target === fond && cfg.fermetureExterieure !== false) fermerModale(); });
+  const onKey = function (ev) {
+    if (ev.key === 'Escape') { ev.stopPropagation(); fermerModale(); if (cfg.onAnnule) cfg.onAnnule(); }
+  };
+  document.addEventListener('keydown', onKey, true);
+  $('#racine-modale').appendChild(fond);
+  modaleOuverte = { fond: fond, onKey: onKey, focusPrecedent: focusPrecedent };
+  const premier = boite.querySelector('input,select,textarea,button');
+  if (premier) setTimeout(function () { try { premier.focus(); } catch (e) {} }, 0);
+  return boite;
+}
+/** Confirmation non bloquante → Promise<boolean>. */
+function confirmer(cfg) {
+  return new Promise(function (resolve) {
+    let repondu = false;
+    const finir = function (v) { if (!repondu) { repondu = true; resolve(v); } };
+    ouvrirModale({
+      titre: cfg.titre,
+      corps: (cfg.corps || [el('p', { text: cfg.message || '' })]),
+      onAnnule: function () { finir(false); },
+      actions: [
+        { label: cfg.labelAnnuler || 'Annuler', onClick: function (f) { finir(false); f(); } },
+        { label: cfg.labelOk || 'Confirmer', variant: cfg.danger ? 'danger' : 'principal', onClick: function (f) { finir(true); f(); } },
+      ],
+    });
+  });
+}
+
+/* --- Autocomplétion (ingrédients, tags) --- */
+/**
+ * attacherAutocompletion(input, {
+ *   items: () => [{ cle, libelle, secondaire }],
+ *   surChoix: (item) => {},
+ *   surCreation: (texte) => {},        // optionnel : entrée « Créer … »
+ *   libelleCreation: (texte) => '…',
+ * })
+ */
+function attacherAutocompletion(input, cfg) {
+  const boite = input.parentNode;
+  boite.classList.add('ac-boite');
+  const liste = el('div', { class: 'ac-liste', hidden: true, role: 'listbox' });
+  boite.appendChild(liste);
+  let courants = [];
+  let actif = -1;
+
+  function fermer() { liste.hidden = true; actif = -1; }
+  function normal(s) { return normaliserNom(s); }
+
+  // Au-dessus de ce score, la suggestion est assez sûre pour être présélectionnée
+  // et validée d'un simple Entrée. En dessous, c'est une piste, pas une réponse.
+  const SCORE_SUR = 55;
+
+  function calculer(txt) {
+    const q = normal(txt);
+    const tous = cfg.items() || [];
+    if (!q) return { items: tous.slice(0, 30), meilleur: -1 };
+    const notes = tous.map(function (it) {
+      const cible = normal(it.libelle);
+      const alias = (it.alias || []).map(normal);
+      let score = -1;
+      if (cible === q) score = 100;
+      else if (cible.indexOf(q) === 0) score = 80;
+      else if (alias.some(function (a) { return a === q; })) score = 70;
+      else if (cible.indexOf(q) > 0) score = 60;
+      else if (alias.some(function (a) { return a.indexOf(q) === 0; })) score = 55;
+      else if (alias.some(function (a) { return a.indexOf(q) >= 0; })) score = 45;
+      else if (ressemblance(txt, it.libelle) >= 0.7) score = 30;
+      return { it: it, score: score };
+    }).filter(function (x) { return x.score >= 0; })
+      .sort(function (a, b) { return b.score - a.score || a.it.libelle.localeCompare(b.it.libelle, 'fr'); });
+    return {
+      items: notes.slice(0, 30).map(function (x) { return x.it; }),
+      meilleur: notes.length ? notes[0].score : -1,
+    };
+  }
+
+  function afficher() {
+    const txt = input.value;
+    const calcul = calculer(txt);
+    courants = calcul.items;
+    liste.innerHTML = '';
+    courants.forEach(function (it, i) {
+      const ligne = el('div', { class: 'ac-item', role: 'option', 'data-i': i }, [
+        el('span', { text: it.libelle }),
+        it.secondaire ? el('span', { class: 'sec', text: it.secondaire }) : null,
+      ]);
+      ligne.addEventListener('mousedown', function (ev) { ev.preventDefault(); choisir(i); });
+      liste.appendChild(ligne);
+    });
+    const peutCreer = !!(cfg.surCreation && txt.trim() &&
+      !courants.some(function (it) { return normal(it.libelle) === normal(txt); }));
+    if (peutCreer) {
+      const ligne = el('div', { class: 'ac-item creer', 'data-creer': '1' }, [
+        el('span', { text: (cfg.libelleCreation ? cfg.libelleCreation(txt.trim()) : '＋ Créer « ' + txt.trim() + ' »') }),
+      ]);
+      ligne.addEventListener('mousedown', function (ev) { ev.preventDefault(); creer(); });
+      liste.appendChild(ligne);
+    }
+    const n = liste.children.length;
+    liste.hidden = n === 0;
+    // Présélection : la première suggestion seulement si elle est sûre, sinon
+    // l'entrée « Créer », pour qu'un Entrée ne choisisse jamais un ingrédient
+    // approchant à la place de celui qu'on est en train de saisir.
+    if (!txt.trim()) actif = -1;
+    else if (courants.length && calcul.meilleur >= SCORE_SUR) actif = 0;
+    else if (peutCreer) actif = n - 1;
+    else actif = courants.length ? 0 : -1;
+    marquer();
+  }
+  function marquer() {
+    $$('.ac-item', liste).forEach(function (n, i) { n.classList.toggle('actif', i === actif); });
+    if (actif >= 0 && liste.children[actif]) {
+      const n = liste.children[actif];
+      if (n.offsetTop < liste.scrollTop) liste.scrollTop = n.offsetTop;
+      else if (n.offsetTop + n.offsetHeight > liste.scrollTop + liste.clientHeight) {
+        liste.scrollTop = n.offsetTop + n.offsetHeight - liste.clientHeight;
+      }
+    }
+  }
+  function choisir(i) {
+    const it = courants[i];
+    if (!it) return;
+    fermer();
+    cfg.surChoix(it);
+  }
+  function creer() {
+    const txt = input.value.trim();
+    fermer();
+    if (txt && cfg.surCreation) cfg.surCreation(txt);
+  }
+  function validerActif() {
+    if (liste.hidden || actif < 0) return false;
+    const n = liste.children[actif];
+    if (!n) return false;
+    if (n.dataset.creer) { creer(); return true; }
+    choisir(Number(n.dataset.i)); return true;
+  }
+
+  input.setAttribute('autocomplete', 'off');
+  input.addEventListener('input', afficher);
+  input.addEventListener('focus', afficher);
+  input.addEventListener('blur', function () { setTimeout(fermer, 120); });
+  input.addEventListener('keydown', function (ev) {
+    if (ev.key === 'ArrowDown') { ev.preventDefault(); if (liste.hidden) afficher(); else { actif = Math.min(actif + 1, liste.children.length - 1); marquer(); } }
+    else if (ev.key === 'ArrowUp') { ev.preventDefault(); actif = Math.max(actif - 1, 0); marquer(); }
+    else if (ev.key === 'Escape') { if (!liste.hidden) { ev.stopPropagation(); fermer(); } }
+    else if (ev.key === 'Enter') {
+      ev.preventDefault();
+      if (!validerActif() && cfg.surEntreeVide) cfg.surEntreeVide(input.value.trim());
+    }
+  });
+  return { fermer: fermer, rafraichir: afficher };
+}
+
+/* ——— ÉTAT DE L'APPLICATION ————————————————————————————————————————————— */
+
+let D = null;                      // objet racine (source de vérité)
+const etat = {
+  onglet: 'semaine',
+  rechercheRecettes: '',
+  tagFiltre: '',
+  rechercheIngredients: '',
+  triRef: { colonne: 'nom', sens: 1 },
+  editionRecette: null,            // { recette, nouvelle }
+  rayonsOuverts: {},               // surcharge manuelle du pliage des rayons
+  rayonsToutCoches: {},            // dernier état connu, pour réarmer le pliage auto
+  provenanceOuverte: null,
+  placardOuvert: false,
+  ecranAllume: false,
+};
+
+async function sauvegarder() {
+  D.semaine.dateModification = new Date().toISOString();
+  await Store.save(D);
+}
+
+function appliquerTheme() {
+  const t = (D && D.reglages && D.reglages.theme) || 'auto';
+  if (t === 'auto') document.documentElement.removeAttribute('data-theme');
+  else document.documentElement.setAttribute('data-theme', t);
+}
+
+function afficherPrix() { return !!(D && D.reglages.afficherPrix); }
+
+function ingredientParId(id) {
+  for (let i = 0; i < D.ingredients.length; i++) if (D.ingredients[i].id === id) return D.ingredients[i];
+  return null;
+}
+function recetteParId(id) {
+  for (let i = 0; i < D.recettes.length; i++) if (D.recettes[i].id === id) return D.recettes[i];
+  return null;
+}
+function tousLesTags() {
+  const s = new Set();
+  D.recettes.forEach(function (r) { r.tags.forEach(function (t) { s.add(t); }); });
+  return Array.from(s).sort(function (a, b) { return a.localeCompare(b, 'fr'); });
+}
+
+/* --- Navigation --- */
+const TITRES = { semaine: 'Semaine', liste: 'Liste de courses', recettes: 'Recettes', reglages: 'Réglages' };
+function allerA(onglet) {
+  etat.onglet = onglet;
+  $$('#tabbar button').forEach(function (b) {
+    const actif = b.dataset.tab === onglet;
+    if (actif) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  });
+  $$('.vue').forEach(function (v) { v.classList.toggle('actif', v.id === 'vue-' + onglet); });
+  $('#titre-page').textContent = TITRES[onglet] || '';
+  rendre();
+  window.scrollTo(0, 0);
+}
+
+function rendre() {
+  if (!D) return;
+  appliquerTheme();
+  $('#entete-extra').textContent = (etat.onglet === 'semaine' || etat.onglet === 'liste') ? D.semaine.libelle : '';
+  if (etat.onglet === 'semaine') vueSemaine();
+  else if (etat.onglet === 'liste') vueListe();
+  else if (etat.onglet === 'recettes') vueRecettes();
+  else if (etat.onglet === 'reglages') vueReglages();
+}
+
+/* ——— INGRÉDIENTS : création, rapprochement, fusion (§4.3) ——————————————— */
+
+/**
+ * Ouvre le formulaire de création d'ingrédient.
+ * Vérifie d'abord la ressemblance avec le référentiel et propose la fusion.
+ * → callback(ingredient) une fois créé (ou l'ingrédient existant si fusion).
+ */
+function creerIngredient(nomSaisi, callback, options) {
+  const opts = options || {};
+  const similaires = trouverSimilaires(D.ingredients, nomSaisi);
+  if (similaires.length && !opts.sauterRapprochement) {
+    proposerFusion(nomSaisi, similaires, callback);
+    return;
+  }
+  formulaireIngredient(nomSaisi, callback);
+}
+
+function proposerFusion(nomSaisi, similaires, callback) {
+  const meilleur = similaires[0].ingredient;
+  const corps = [
+    el('p', { html: '« <strong>' + esc(nomSaisi) + '</strong> » ressemble à « <strong>' + esc(meilleur.nom) + '</strong> ». Même ingrédient ?' }),
+    el('p', { class: 'pt doux', text: 'Fusionner ajoute « ' + nomSaisi + ' » comme alias de « ' + meilleur.nom + ' » : les deux noms désigneront le même ingrédient.' }),
+  ];
+  if (similaires.length > 1) {
+    const autres = el('div', {}, [el('p', { class: 'tpt doux', text: 'Autres ressemblances :' })]);
+    const ul = el('ul', { class: 'pt doux' });
+    similaires.slice(1, 4).forEach(function (s) {
+      const li = el('li');
+      li.appendChild(el('button', {
+        type: 'button', class: 'btn mini', text: 'Fusionner avec « ' + s.ingredient.nom + ' »',
+        onclick: function () { fermerModale(); appliquerAlias(s.ingredient, nomSaisi, callback); },
+      }));
+      ul.appendChild(li);
+    });
+    autres.appendChild(ul);
+    corps.push(autres);
+  }
+  ouvrirModale({
+    titre: 'Ingrédient déjà connu ?',
+    corps: corps,
+    actions: [
+      { label: 'Créer quand même', onClick: function (f) { f(); formulaireIngredient(nomSaisi, callback); } },
+      { label: 'Fusionner avec « ' + meilleur.nom + ' »', variant: 'principal',
+        onClick: function (f) { f(); appliquerAlias(meilleur, nomSaisi, callback); } },
+    ],
+  });
+}
+
+async function appliquerAlias(ingredient, alias, callback) {
+  const norm = normaliserNom(alias);
+  const dejaConnu = normaliserNom(ingredient.nom) === norm ||
+    ingredient.aliases.some(function (a) { return normaliserNom(a) === norm; });
+  if (!dejaConnu) ingredient.aliases.push(alias);
+  await sauvegarder();
+  toast('« ' + alias +' » rattaché à « ' + ingredient.nom + ' »');
+  if (callback) callback(ingredient);
+}
+
+/** Formulaire de création / édition d'un ingrédient (rayon, famille, unité, prix). */
+function formulaireIngredient(nomInitial, callback, ingredientExistant) {
+  const edition = !!ingredientExistant;
+  const src = ingredientExistant || {
+    nom: nomInitial || '', rayon: 'autre', famille: 'masse', unitePiece: 'pièce',
+    prix: { valeur: null, par: 'kg' }, placard: false, aliases: [],
+  };
+
+  const champNom = el('input', { type: 'text', value: src.nom, placeholder: 'Tomates concassées' });
+  const champRayon = el('select');
+  RAYONS.forEach(function (r) { champRayon.appendChild(el('option', { value: r[0], text: r[1], selected: src.rayon === r[0] })); });
+  const champFamille = el('select');
+  FAMILLES.forEach(function (f) { champFamille.appendChild(el('option', { value: f[0], text: f[1], selected: src.famille === f[0] })); });
+
+  const champUnitePiece = el('input', { type: 'text', value: src.unitePiece || 'pièce', list: 'dl-unites-piece', placeholder: 'pièce' });
+  const blocUnitePiece = el('label', { class: 'champ' }, [
+    el('span', { text: 'Unité de la pièce' }),
+    champUnitePiece,
+    el('span', { class: 'tpt doux', text: 'pièce, gousse, botte, tranche, pincée…' }),
+  ]);
+  const champPrix = el('input', { type: 'text', inputmode: 'decimal', value: (src.prix && typeof src.prix.valeur === 'number') ? formatNombre(src.prix.valeur, 2) : '', placeholder: 'ex. 2,40' });
+  const suffixePrix = el('span', { class: 'puce', text: PAR_PRIX_LIBELLE[PAR_PRIX_PAR_FAMILLE[src.famille]] });
+  const champPlacard = el('input', { type: 'checkbox', checked: !!src.placard });
+
+  function majFamille() {
+    const fam = champFamille.value;
+    blocUnitePiece.hidden = fam !== 'piece';
+    suffixePrix.textContent = PAR_PRIX_LIBELLE[PAR_PRIX_PAR_FAMILLE[fam]];
+  }
+  champFamille.addEventListener('change', majFamille);
+  majFamille();
+
+  const corps = [
+    el('label', { class: 'champ' }, [el('span', { text: 'Nom' }), champNom]),
+    el('div', { class: 'ligne-champs' }, [
+      el('label', { class: 'champ' }, [el('span', { text: 'Rayon' }), champRayon]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Famille d\'unités' }), champFamille]),
+    ]),
+    blocUnitePiece,
+    el('label', { class: 'champ' }, [
+      el('span', { text: 'Prix de référence (facultatif)' }),
+      el('div', { class: 'ligne-champs' }, [champPrix, el('div', { class: 'zone-fixe' }, [suffixePrix])]),
+    ]),
+    el('label', { class: 'inline-case' }, [champPlacard, el('span', { text: 'Produit de fond de placard (sel, huile, épices…)' })]),
+    el('p', { class: 'tpt doux', text: 'La famille est définitive pour les calculs : on ne convertit jamais entre masse, volume et pièce.' }),
+  ];
+
+  ouvrirModale({
+    titre: edition ? 'Modifier l\'ingrédient' : 'Nouvel ingrédient',
+    corps: corps,
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      {
+        label: edition ? 'Enregistrer' : 'Créer', variant: 'principal',
+        onClick: async function (f) {
+          const nom = champNom.value.trim();
+          if (!nom) { champNom.focus(); toast('Un nom est nécessaire.'); return; }
+          const fam = champFamille.value;
+          const cible = ingredientExistant || { id: genererId('ing', nom), aliases: [] };
+          cible.nom = nom;
+          cible.rayon = champRayon.value;
+          cible.famille = fam;
+          cible.unitePiece = fam === 'piece' ? (champUnitePiece.value.trim() || 'pièce') : null;
+          cible.prix = { valeur: parseNombre(champPrix.value), par: PAR_PRIX_PAR_FAMILLE[fam] };
+          cible.placard = champPlacard.checked;
+          if (!edition) D.ingredients.push(cible);
+          else corrigerUnitesRecettes(cible);
+          await sauvegarder();
+          f();
+          if (callback) callback(cible);
+          else { toast('Ingrédient enregistré.'); rendre(); }
+        },
+      },
+    ],
+  });
+}
+
+/** Après un changement de famille, réaligne les unités des lignes de recettes. */
+function corrigerUnitesRecettes(ingredient) {
+  const valides = unitesDe(ingredient);
+  D.recettes.forEach(function (r) {
+    r.lignes.forEach(function (l) {
+      if (l.ingredientId === ingredient.id && valides.indexOf(l.unite) < 0) l.unite = valides[0];
+    });
+  });
+}
+
+/** Fusion manuelle : source devient un alias de cible, les recettes sont mises à jour. */
+async function fusionnerIngredients(sourceId, cibleId) {
+  const source = ingredientParId(sourceId);
+  const cible = ingredientParId(cibleId);
+  if (!source || !cible || source.id === cible.id) return;
+  const noms = [source.nom].concat(source.aliases);
+  noms.forEach(function (n) {
+    const norm = normaliserNom(n);
+    if (normaliserNom(cible.nom) !== norm && !cible.aliases.some(function (a) { return normaliserNom(a) === norm; })) {
+      cible.aliases.push(n);
+    }
+  });
+  const unitesCible = unitesDe(cible);
+  D.recettes.forEach(function (r) {
+    const fusionnees = [];
+    r.lignes.forEach(function (l) {
+      if (l.ingredientId !== source.id) { fusionnees.push(l); return; }
+      l.ingredientId = cible.id;
+      if (unitesCible.indexOf(l.unite) < 0) l.unite = unitesCible[0];
+      fusionnees.push(l);
+    });
+    // Deux lignes du même ingrédient dans une recette : on additionne en unité de base.
+    const parIng = new Map();
+    const resultat = [];
+    fusionnees.forEach(function (l) {
+      const cle = l.ingredientId + '|' + l.fixe;
+      if (!parIng.has(cle)) { parIng.set(cle, l); resultat.push(l); return; }
+      const ref = parIng.get(cle);
+      const baseRef = versBase(ref.quantite, ref.unite, cible.famille);
+      const baseAdd = versBase(l.quantite, l.unite, cible.famille);
+      const f = facteurUnite(cible.famille, ref.unite) || 1;
+      ref.quantite = (baseRef + baseAdd) / f;
+    });
+    r.lignes = resultat;
+  });
+  if (D.semaine.coches[source.id]) { D.semaine.coches[cible.id] = true; delete D.semaine.coches[source.id]; }
+  D.ingredients = D.ingredients.filter(function (i) { return i.id !== source.id; });
+  await sauvegarder();
+  toast('« ' + source.nom + ' » fusionné dans « ' + cible.nom + ' ».');
+  rendre();
+}
+
+/* ——— VUES ——————————————————————————————————————————————————————————————— */
+
+/* --- 5.1 Semaine (écran d'accueil) --- */
+
+function selectionDe(recetteId) {
+  return D.semaine.selection.find(function (s) { return s.recetteId === recetteId; }) || null;
+}
+async function ajouterASemaine(recette) {
+  if (selectionDe(recette.id)) return;
+  D.semaine.selection.push({ recetteId: recette.id, portions: recette.portionsDefaut || 4 });
+  await sauvegarder();
+  rendre();
+}
+async function retirerDeSemaine(recetteId) {
+  D.semaine.selection = D.semaine.selection.filter(function (s) { return s.recetteId !== recetteId; });
+  await sauvegarder();
+  rendre();
+}
+async function changerPortions(recetteId, delta) {
+  const sel = selectionDe(recetteId);
+  if (!sel) return;
+  sel.portions = Math.max(1, Math.min(99, sel.portions + delta));
+  const rec = recetteParId(recetteId);
+  if (rec) rec.portionsDefaut = sel.portions;   // mémorisé pour les prochaines fois
+  await sauvegarder();
+  rendre();
+}
+
+function estJeuExemple() {
+  return D.recettes.some(function (r) { return IDS_EXEMPLE_RECETTES.indexOf(r.id) >= 0; });
+}
+
+function vueSemaine() {
+  const v = $('#vue-semaine');
+  v.innerHTML = '';
+
+  if (estJeuExemple()) {
+    v.appendChild(el('div', { class: 'bandeau-exemple' }, [
+      el('span', { text: 'Données d\'exemple chargées : 3 recettes et leurs ingrédients, pour essayer tout de suite.' }),
+      el('button', { type: 'button', class: 'btn mini', text: 'Effacer les données d\'exemple', onclick: effacerDonneesExemple }),
+    ]));
+  }
+
+  // Barre de recherche + filtre par tag
+  const champRecherche = el('input', { type: 'search', placeholder: 'Rechercher une recette…', value: etat.rechercheRecettes, 'aria-label': 'Rechercher une recette' });
+  champRecherche.addEventListener('input', function () { etat.rechercheRecettes = champRecherche.value; remplirCartes(); });
+  const selectTag = el('select', { 'aria-label': 'Filtrer par tag' });
+  selectTag.appendChild(el('option', { value: '', text: 'Tous les tags' }));
+  tousLesTags().forEach(function (t) { selectTag.appendChild(el('option', { value: t, text: t, selected: etat.tagFiltre === t })); });
+  selectTag.addEventListener('change', function () { etat.tagFiltre = selectTag.value; remplirCartes(); });
+  v.appendChild(el('div', { class: 'recherche' }, [champRecherche, selectTag]));
+
+  const grille = el('div', { class: 'grille-recettes' });
+  v.appendChild(grille);
+
+  // Récapitulatif toujours visible
+  const recap = el('div', { class: 'carte recap', id: 'recap-semaine' });
+  v.appendChild(recap);
+
+  const outils = el('div', { class: 'barre-actions', style: 'margin-top:.6rem' }, [
+    el('button', { type: 'button', class: 'btn', text: 'Vider la semaine', onclick: viderSemaine }),
+    el('button', { type: 'button', class: 'btn', text: 'Enregistrer comme semaine type', onclick: enregistrerSemaineType }),
+    el('button', { type: 'button', class: 'btn', text: 'Charger une semaine type', onclick: chargerSemaineType }),
+    el('button', { type: 'button', class: 'btn', text: 'Reprendre la semaine dernière', onclick: reprendreSemaineDerniere }),
+  ]);
+  v.appendChild(outils);
+
+  function remplirCartes() {
+    grille.innerHTML = '';
+    const q = normaliserNom(etat.rechercheRecettes);
+    const recettes = D.recettes.filter(function (r) {
+      if (etat.tagFiltre && r.tags.indexOf(etat.tagFiltre) < 0) return false;
+      if (!q) return true;
+      return normaliserNom(r.nom).indexOf(q) >= 0 || r.tags.some(function (t) { return normaliserNom(t).indexOf(q) >= 0; });
+    }).sort(function (a, b) {
+      const sa = selectionDe(a.id) ? 0 : 1, sb = selectionDe(b.id) ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      return a.nom.localeCompare(b.nom, 'fr');
+    });
+
+    if (!D.recettes.length) {
+      grille.appendChild(el('div', { class: 'rien' }, [
+        el('p', { text: 'Aucune recette pour l\'instant.' }),
+        el('button', { type: 'button', class: 'btn principal', text: 'Créer ma première recette', onclick: function () { allerA('recettes'); ouvrirEditeurRecette(null); } }),
+      ]));
+      return;
+    }
+    if (!recettes.length) { grille.appendChild(el('div', { class: 'rien', text: 'Aucune recette ne correspond.' })); return; }
+
+    recettes.forEach(function (r) {
+      const sel = selectionDe(r.id);
+      const c = coutRecette(D, r, sel ? sel.portions : r.portionsDefaut);
+      const fraicheur = texteFraicheur(r.derniereUtilisation);
+      const meta = el('div', { class: 'meta' });
+      if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
+      r.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
+      if (afficherPrix() && c.total > 0) {
+        meta.appendChild(el('span', { class: 'puce', text: formatEuroFixe(c.parPortion) + ' / portion' }));
+      }
+      if (fraicheur) meta.appendChild(el('span', { class: 'puce alerte', text: fraicheur }));
+
+      const infos = el('div', { class: 'infos' }, [
+        el('div', { class: 'nom', text: r.nom }),
+        meta,
+      ]);
+      const action = sel
+        ? el('div', { style: 'display:flex;flex-direction:column;gap:.3rem;align-items:flex-end' }, [
+            el('div', { class: 'stepper' }, [
+              el('button', { type: 'button', text: '−', 'aria-label': 'Moins de portions', onclick: function () { changerPortions(r.id, -1); } }),
+              el('span', { class: 'valeur', text: sel.portions + ' port.' }),
+              el('button', { type: 'button', text: '+', 'aria-label': 'Plus de portions', onclick: function () { changerPortions(r.id, 1); } }),
+            ]),
+            el('button', { type: 'button', class: 'btn mini fantome', text: 'Retirer', onclick: function () { retirerDeSemaine(r.id); } }),
+          ])
+        : el('button', { type: 'button', class: 'btn principal', style: 'min-width:44px', text: '+', 'aria-label': 'Ajouter ' + r.nom + ' à la semaine', onclick: function () { ajouterASemaine(r); } });
+
+      const carte = el('div', { class: 'carte carte-recette' + (sel ? ' selectionnee' : '') }, [infos, action]);
+      carte.querySelector('.nom').addEventListener('click', function () { allerA('recettes'); ouvrirEditeurRecette(r); });
+      carte.querySelector('.nom').style.cursor = 'pointer';
+      grille.appendChild(carte);
+    });
+  }
+
+  function remplirRecap() {
+    recap.innerHTML = '';
+    const sel = D.semaine.selection;
+    const totalPortions = sel.reduce(function (a, s) { return a + s.portions; }, 0);
+    const c = coutSelection(D, sel);
+    recap.appendChild(el('h2', { text: 'Ma semaine' }));
+    if (!sel.length) {
+      recap.appendChild(el('p', { class: 'doux', text: 'Aucune recette retenue. Ajoutez-en avec le bouton « + ».' }));
+      return;
+    }
+    const ul = el('ul', { class: 'pt', style: 'margin:.2rem 0 .5rem;padding-left:1.1rem' });
+    sel.forEach(function (s) {
+      const r = recetteParId(s.recetteId);
+      if (r) ul.appendChild(el('li', { text: r.nom + ' — ' + s.portions + ' portions' }));
+    });
+    recap.appendChild(ul);
+    const infos = el('div', { class: 'barre-actions', style: 'align-items:center;margin-bottom:.5rem' }, [
+      el('span', { class: 'puce accent', text: sel.length + ' recette' + (sel.length > 1 ? 's' : '') }),
+      el('span', { class: 'puce accent', text: totalPortions + ' portions' }),
+      afficherPrix() ? el('span', { class: 'puce accent', text: texteTotal(c.total, c.sansPrix) }) : null,
+    ]);
+    recap.appendChild(infos);
+    if (afficherPrix()) {
+      const evo = evolutionCout(c.total);
+      if (evo) recap.appendChild(el('p', { class: 'tpt doux', text: evo }));
+    }
+    recap.appendChild(el('button', {
+      type: 'button', class: 'btn principal', style: 'width:100%', text: 'Générer la liste',
+      onclick: function () { allerA('liste'); },
+    }));
+  }
+
+  remplirCartes();
+  remplirRecap();
+}
+
+function evolutionCout(coutActuel) {
+  const h = D.historique.filter(function (x) { return typeof x.coutEstime === 'number' && x.coutEstime > 0; });
+  if (!h.length) return null;
+  const precedent = h[0];
+  const delta = coutActuel - precedent.coutEstime;
+  const signe = delta >= 0 ? '+' : '−';
+  return 'Semaine précédente (' + formatDateCourte(precedent.date) + ') : ' + formatEuroFixe(precedent.coutEstime) +
+    ' · ' + signe + ' ' + formatEuroFixe(Math.abs(delta));
+}
+
+async function viderSemaine() {
+  if (!D.semaine.selection.length && !D.semaine.ajoutsManuels.length) { toast('La semaine est déjà vide.'); return; }
+  const ok = await confirmer({
+    titre: 'Vider la semaine',
+    message: 'La sélection en cours est archivée dans l\'historique, puis remise à zéro. Les recettes retenues sont marquées comme faites aujourd\'hui.',
+    labelOk: 'Archiver et vider',
+  });
+  if (!ok) return;
+  const ancienne = {
+    selection: D.semaine.selection.slice(),
+    coches: Object.assign({}, D.semaine.coches),
+    ajoutsManuels: D.semaine.ajoutsManuels.slice(),
+    libelle: D.semaine.libelle,
+  };
+  const ancienHistorique = D.historique.slice();
+  const ancienneUtilisation = D.recettes.map(function (r) { return { id: r.id, d: r.derniereUtilisation }; });
+
+  if (D.semaine.selection.length) {
+    const c = coutSelection(D, D.semaine.selection);
+    D.historique.unshift({
+      date: aujourdHuiISO(), libelle: D.semaine.libelle,
+      selection: D.semaine.selection.slice(), coutEstime: c.total,
+    });
+    D.historique = D.historique.slice(0, 60);
+    const auj = aujourdHuiISO();
+    D.semaine.selection.forEach(function (s) {
+      const r = recetteParId(s.recetteId);
+      if (r) r.derniereUtilisation = auj;
+    });
+  }
+  D.semaine.selection = [];
+  D.semaine.coches = {};
+  D.semaine.ajoutsManuels = [];
+  D.semaine.libelle = libelleSemaineCourante();
+  await sauvegarder();
+  rendre();
+  toast('Semaine archivée et vidée', {
+    duree: 5000, actionLabel: 'Annuler',
+    onAction: async function () {
+      D.semaine.selection = ancienne.selection;
+      D.semaine.coches = ancienne.coches;
+      D.semaine.ajoutsManuels = ancienne.ajoutsManuels;
+      D.semaine.libelle = ancienne.libelle;
+      D.historique = ancienHistorique;
+      ancienneUtilisation.forEach(function (x) { const r = recetteParId(x.id); if (r) r.derniereUtilisation = x.d; });
+      await sauvegarder();
+      rendre();
+    },
+  });
+}
+
+function enregistrerSemaineType() {
+  if (!D.semaine.selection.length) { toast('Ajoutez d\'abord des recettes.'); return; }
+  const champ = el('input', { type: 'text', placeholder: 'Semaine rapide', value: '' });
+  ouvrirModale({
+    titre: 'Enregistrer comme semaine type',
+    corps: [el('label', { class: 'champ' }, [el('span', { text: 'Nom de la semaine type' }), champ])],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      {
+        label: 'Enregistrer', variant: 'principal',
+        onClick: async function (f) {
+          const nom = champ.value.trim() || 'Semaine type';
+          D.semainesTypes.push({ id: genererId('st', nom), nom: nom, selection: D.semaine.selection.slice() });
+          await sauvegarder();
+          f(); toast('Semaine type « ' + nom + ' » enregistrée.'); rendre();
+        },
+      },
+    ],
+  });
+}
+
+function chargerSemaineType() {
+  if (!D.semainesTypes.length) { toast('Aucune semaine type enregistrée.'); return; }
+  const corps = [el('p', { class: 'pt doux', text: 'La sélection actuelle sera remplacée.' })];
+  const liste = el('div', { class: 'lignes-ing' });
+  D.semainesTypes.forEach(function (t) {
+    const noms = t.selection.map(function (s) { const r = recetteParId(s.recetteId); return r ? r.nom : null; }).filter(Boolean);
+    liste.appendChild(el('div', { class: 'carte plate', style: 'margin:0' }, [
+      el('div', { class: 'gras', text: t.nom }),
+      el('div', { class: 'tpt doux', text: noms.join(' · ') || 'Vide' }),
+      el('div', { class: 'barre-actions', style: 'margin-top:.4rem' }, [
+        el('button', {
+          type: 'button', class: 'btn mini principal', text: 'Charger',
+          onclick: async function () {
+            fermerModale();
+            D.semaine.selection = nettoyerSelection(t.selection, new Set(D.recettes.map(function (r) { return r.id; })));
+            D.semaine.coches = {};
+            await sauvegarder(); rendre(); toast('Semaine type chargée.');
+          },
+        }),
+        el('button', {
+          type: 'button', class: 'btn mini danger', text: 'Supprimer',
+          onclick: async function () {
+            const idx = D.semainesTypes.indexOf(t);
+            D.semainesTypes.splice(idx, 1);
+            await sauvegarder(); fermerModale();
+            supprimerAvecAnnulation('Semaine type « ' + t.nom + ' »', async function () {
+              D.semainesTypes.splice(idx, 0, t); await sauvegarder(); rendre();
+            });
+            rendre();
+          },
+        }),
+      ]),
+    ]));
+  });
+  corps.push(liste);
+  ouvrirModale({ titre: 'Charger une semaine type', corps: corps, actions: [{ label: 'Fermer', onClick: function (f) { f(); } }] });
+}
+
+async function reprendreSemaineDerniere() {
+  const derniere = D.historique[0];
+  if (!derniere || !derniere.selection.length) { toast('Aucune semaine dans l\'historique.'); return; }
+  const ok = await confirmer({
+    titre: 'Reprendre la semaine dernière',
+    message: 'Reprendre la sélection du ' + formatDateCourte(derniere.date) + ' ? La sélection actuelle sera remplacée.',
+    labelOk: 'Reprendre',
+  });
+  if (!ok) return;
+  D.semaine.selection = nettoyerSelection(derniere.selection, new Set(D.recettes.map(function (r) { return r.id; })));
+  D.semaine.coches = {};
+  await sauvegarder();
+  rendre();
+  toast('Sélection reprise.');
+}
+
+async function effacerDonneesExemple() {
+  const ok = await confirmer({
+    titre: 'Effacer les données d\'exemple',
+    message: 'Les 3 recettes d\'exemple et les ingrédients qui ne servent qu\'à elles seront supprimés. Vos propres recettes et ingrédients sont conservés.',
+    labelOk: 'Effacer', danger: true,
+  });
+  if (!ok) return;
+  const avant = JSON.parse(JSON.stringify(D));
+  const idsExemple = new Set(IDS_EXEMPLE_RECETTES);
+  D.recettes = D.recettes.filter(function (r) { return !idsExemple.has(r.id); });
+  D.semaine.selection = D.semaine.selection.filter(function (s) { return !idsExemple.has(s.recetteId); });
+  D.semainesTypes.forEach(function (t) { t.selection = t.selection.filter(function (s) { return !idsExemple.has(s.recetteId); }); });
+  D.historique.forEach(function (h) { h.selection = h.selection.filter(function (s) { return !idsExemple.has(s.recetteId); }); });
+  // On ne supprime que les ingrédients d'exemple devenus inutilisés.
+  const utilises = new Set();
+  D.recettes.forEach(function (r) { r.lignes.forEach(function (l) { utilises.add(l.ingredientId); }); });
+  const idsIngExemple = new Set(donneesExemple().ingredients.map(function (i) { return i.id; }));
+  D.ingredients = D.ingredients.filter(function (i) { return !idsIngExemple.has(i.id) || utilises.has(i.id); });
+  await sauvegarder();
+  rendre();
+  toast('Données d\'exemple effacées', {
+    duree: 5000, actionLabel: 'Annuler',
+    onAction: async function () { D = normaliserRacine(avant); await Store.save(D); rendre(); },
+  });
+}
+
+/* --- 5.2 Liste de courses — l'écran utilisé debout, à une main --- */
+
+async function basculerCoche(cle, valeur) {
+  // Écriture ciblée : l'état des cases est sauvegardé immédiatement.
+  if (valeur) await Store.patch('semaine.coches.' + cle, true);
+  else await Store.patch('semaine.coches.' + cle, undefined);
+  D.semaine.dateModification = new Date().toISOString();
+  await Store.flush();
+}
+
+function vueListe() {
+  const v = $('#vue-liste');
+  const scroll = window.scrollY;
+  v.innerHTML = '';
+  const modele = construireListe(D);
+  const t = modele.totaux;
+
+  // En-tête collant
+  const entete = el('div', { class: 'entete-liste' });
+  entete.appendChild(el('span', { text: t.nbCoches + ' / ' + t.nbArticles + ' article' + (t.nbArticles > 1 ? 's' : '') }));
+  if (afficherPrix()) {
+    entete.appendChild(el('span', { class: 'doux', text: '·' }));
+    entete.appendChild(el('span', { class: 'reste', text: texteTotal(t.totalRestant, t.sansPrixRestant) + ' restants' }));
+  }
+  v.appendChild(entete);
+
+  if (!modele.articles.length && !modele.placard.length) {
+    v.appendChild(el('div', { class: 'rien' }, [
+      el('p', { text: 'La liste est vide.' }),
+      el('p', { class: 'pt', text: 'Choisissez des recettes dans l\'onglet Semaine, ou ajoutez un article à la main ci-dessous.' }),
+    ]));
+  }
+
+  // Rayons
+  modele.groupes.forEach(function (g) {
+    const cleOuvert = g.rayon;
+    // Pliage automatique d'un rayon entièrement coché ; l'utilisateur peut rouvrir.
+    if (etat.rayonsToutCoches[cleOuvert] !== g.tousCoches) {
+      etat.rayonsToutCoches[cleOuvert] = g.tousCoches;
+      delete etat.rayonsOuverts[cleOuvert];
+    }
+    const ouvert = (cleOuvert in etat.rayonsOuverts) ? etat.rayonsOuverts[cleOuvert] : !g.tousCoches;
+
+    const bloc = el('details', { class: 'rayon', open: ouvert });
+    bloc.addEventListener('toggle', function () { etat.rayonsOuverts[cleOuvert] = bloc.open; });
+    const resume = el('summary', {}, [
+      el('span', { text: g.libelle }),
+      el('span', { class: 'compte', text: g.nbCoches + '/' + g.articles.length }),
+    ]);
+    bloc.appendChild(resume);
+
+    g.articles.forEach(function (a) { bloc.appendChild(ligneArticle(a)); });
+    v.appendChild(bloc);
+  });
+
+  // Ingrédients sans rayon → invitation à les classer
+  const aClasser = modele.articles.concat(modele.placard)
+    .filter(function (a) { return a.type === 'ingredient' && a.rayon === 'autre'; });
+  if (aClasser.length) {
+    v.appendChild(el('div', { class: 'carte plate pt doux' }, [
+      el('span', { text: aClasser.length + ' ingrédient' + (aClasser.length > 1 ? 's sont' : ' est') + ' encore dans « Autre ». ' }),
+      el('button', { type: 'button', class: 'btn mini', text: 'Les classer', onclick: function () { allerA('reglages'); } }),
+    ]));
+  }
+
+  // Section placard, repliée, hors total
+  if (modele.placard.length) {
+    const bloc = el('details', { class: 'rayon', open: etat.placardOuvert });
+    bloc.addEventListener('toggle', function () { etat.placardOuvert = bloc.open; });
+    bloc.appendChild(el('summary', {}, [
+      el('span', { text: 'À vérifier au placard' }),
+      el('span', { class: 'compte', text: modele.placard.length + ' produit' + (modele.placard.length > 1 ? 's' : '') }),
+    ]));
+    modele.placard.forEach(function (a) { bloc.appendChild(ligneArticle(a)); });
+    v.appendChild(bloc);
+  }
+
+  // Ajout manuel en un champ
+  const champManuel = el('input', { type: 'text', placeholder: 'Ajouter un article (papier toilette, café…)', 'aria-label': 'Ajouter un article' });
+  const selectRayonManuel = el('select', { 'aria-label': 'Rayon de l\'article', style: 'flex:0 1 190px' });
+  D.reglages.ordreRayons.forEach(function (r) {
+    selectRayonManuel.appendChild(el('option', { value: r, text: RAYON_LIBELLE[r], selected: r === 'autre' }));
+  });
+  const ajouter = async function () {
+    const nom = champManuel.value.trim();
+    if (!nom) return;
+    D.semaine.ajoutsManuels.push({ id: 'man_' + slug(nom) + '_' + suffixeCourt(), nom: nom, rayon: selectRayonManuel.value, quantite: null, unite: null });
+    champManuel.value = '';
+    await sauvegarder();
+    vueListe();
+    const c = $('#vue-liste .ajout-manuel input');
+    if (c) c.focus();
+  };
+  champManuel.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ajouter(); } });
+  v.appendChild(el('div', { class: 'carte' }, [
+    el('div', { class: 'ajout-manuel' }, [
+      champManuel, selectRayonManuel,
+      el('button', { type: 'button', class: 'btn principal', text: 'Ajouter', onclick: ajouter }),
+    ]),
+  ]));
+
+  // Actions
+  const actions = el('div', { class: 'barre-actions' }, [
+    el('button', { type: 'button', class: 'btn', text: 'Copier la liste', onclick: copierListe }),
+    el('button', { type: 'button', class: 'btn', text: 'Imprimer', onclick: function () { window.print(); } }),
+    el('button', { type: 'button', class: 'btn', text: 'Réinitialiser les cases', onclick: reinitialiserCases }),
+  ]);
+  if ('wakeLock' in navigator) {
+    const caseEcran = el('input', { type: 'checkbox', checked: etat.ecranAllume });
+    caseEcran.addEventListener('change', function () { basculerWakeLock(caseEcran.checked); });
+    actions.appendChild(el('label', { class: 'inline-case', style: 'padding:0 .5rem' }, [caseEcran, el('span', { class: 'pt', text: 'Garder l\'écran allumé' })]));
+  }
+  v.appendChild(el('div', { class: 'carte plate' }, [actions]));
+
+  if (afficherPrix()) {
+    v.appendChild(el('p', { class: 'tpt doux', text:
+      'Total de la liste : ' + texteTotal(t.totalTous, t.sansPrixTous) +
+      ' · les produits de placard et les articles ajoutés à la main ne sont pas comptés.' }));
+  }
+
+  window.scrollTo(0, scroll);
+}
+
+function ligneArticle(a) {
+  const ligne = el('div', { class: 'article' + (a.coche ? ' coche' : '') });
+
+  const caseCoche = el('input', { type: 'checkbox', checked: a.coche, 'aria-label': 'Cocher ' + a.nom });
+  const zoneCase = el('label', { class: 'case' }, [caseCoche]);
+  caseCoche.addEventListener('change', async function () {
+    await basculerCoche(a.cle, caseCoche.checked);
+    vueListe();
+  });
+
+  const corps = el('button', { type: 'button', class: 'corps', 'aria-expanded': String(etat.provenanceOuverte === a.cle) }, [
+    el('span', { class: 'nom', text: a.nom }),
+    a.texteQuantite ? el('span', { class: 'qte', text: a.texteQuantite }) : null,
+  ]);
+  if (afficherPrix() && a.type === 'ingredient' && !a.ingredient.placard) {
+    corps.appendChild(el('span', { class: 'prix', text: a.cout === null ? '—' : formatEuroFixe(a.cout) }));
+  }
+  corps.addEventListener('click', function () {
+    etat.provenanceOuverte = (etat.provenanceOuverte === a.cle) ? null : a.cle;
+    vueListe();
+  });
+
+  ligne.appendChild(zoneCase);
+  ligne.appendChild(corps);
+
+  if (etat.provenanceOuverte === a.cle) {
+    const detail = el('div', { class: 'detail-provenance' });
+    if (a.type === 'manuel') {
+      detail.appendChild(el('div', { text: 'Article ajouté à la main.' }));
+      detail.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.4rem' }, [
+        el('button', { type: 'button', class: 'btn mini danger', text: 'Supprimer', onclick: async function () {
+          const idx = D.semaine.ajoutsManuels.findIndex(function (m) { return m.id === a.cle; });
+          if (idx < 0) return;
+          const copie = D.semaine.ajoutsManuels[idx];
+          D.semaine.ajoutsManuels.splice(idx, 1);
+          delete D.semaine.coches[a.cle];
+          await sauvegarder(); vueListe();
+          supprimerAvecAnnulation(copie.nom, async function () {
+            D.semaine.ajoutsManuels.splice(idx, 0, copie); await sauvegarder(); vueListe();
+          });
+        } }),
+      ]));
+    } else {
+      const entete = el('div', { class: 'gras', text: a.texteQuantite + ' — ' + a.provenance.map(function (p) {
+        return p.nom + ' (' + formatQuantiteBase(p.base, a.ingredient) + ')';
+      }).join(' + ') });
+      detail.appendChild(entete);
+      const ul = el('ul');
+      a.provenance.forEach(function (p) {
+        ul.appendChild(el('li', { text: p.nom + ' : ' + formatQuantiteBase(p.base, a.ingredient) }));
+      });
+      detail.appendChild(ul);
+      const bas = el('div', { class: 'barre-actions', style: 'margin-top:.4rem;align-items:center' }, [
+        el('span', { class: 'puce', text: RAYON_LIBELLE[a.rayon] }),
+      ]);
+      if (afficherPrix()) {
+        const pu = a.ingredient.prix && typeof a.ingredient.prix.valeur === 'number'
+          ? formatNombre(a.ingredient.prix.valeur, 2) + ' ' + PAR_PRIX_LIBELLE[a.ingredient.prix.par]
+          : 'prix inconnu';
+        bas.appendChild(el('button', {
+          type: 'button', class: 'puce puce-bouton', text: '✎ ' + pu,
+          onclick: function () { editionPrixRapide(a.ingredient, vueListe); },
+        }));
+      }
+      bas.appendChild(el('button', {
+        type: 'button', class: 'puce puce-bouton', text: '✎ Fiche ingrédient',
+        onclick: function () { formulaireIngredient(null, function () { rendre(); }, a.ingredient); },
+      }));
+      detail.appendChild(bas);
+    }
+    const enveloppe = el('div');
+    enveloppe.appendChild(ligne);
+    enveloppe.appendChild(detail);
+    enveloppe.className = '';
+    return enveloppe;
+  }
+  return ligne;
+}
+
+/** Modification du prix en un clic, partout où il est affiché. */
+function editionPrixRapide(ingredient, apres) {
+  const champ = el('input', {
+    type: 'text', inputmode: 'decimal',
+    value: (ingredient.prix && typeof ingredient.prix.valeur === 'number') ? formatNombre(ingredient.prix.valeur, 2) : '',
+    placeholder: 'ex. 2,40',
+  });
+  const unite = PAR_PRIX_LIBELLE[ingredient.prix.par || PAR_PRIX_PAR_FAMILLE[ingredient.famille]];
+  const valider = async function (fermer) {
+    ingredient.prix = { valeur: parseNombre(champ.value), par: PAR_PRIX_PAR_FAMILLE[ingredient.famille] };
+    await sauvegarder();
+    fermer();
+    if (apres) apres();
+  };
+  champ.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); valider(fermerModale); } });
+  ouvrirModale({
+    titre: 'Prix de « ' + ingredient.nom + ' »',
+    corps: [
+      el('label', { class: 'champ' }, [
+        el('span', { text: 'Prix de référence en ' + unite }),
+        el('div', { class: 'ligne-champs' }, [champ, el('div', { class: 'zone-fixe' }, [el('span', { class: 'puce', text: unite })])]),
+      ]),
+      el('p', { class: 'tpt doux', text: 'Laisser vide si le prix est inconnu : la ligne affichera « — » et le total indiquera son incertitude.' }),
+    ],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      { label: 'Enregistrer', variant: 'principal', onClick: function (f) { valider(f); } },
+    ],
+  });
+}
+
+async function reinitialiserCases() {
+  const n = Object.keys(D.semaine.coches).length;
+  if (!n) { toast('Aucune case cochée.'); return; }
+  const ancien = Object.assign({}, D.semaine.coches);
+  D.semaine.coches = {};
+  await sauvegarder();
+  vueListe();
+  toast(n + ' case' + (n > 1 ? 's décochées' : ' décochée'), {
+    duree: 5000, actionLabel: 'Annuler',
+    onAction: async function () { D.semaine.coches = ancien; await sauvegarder(); vueListe(); },
+  });
+}
+
+/** Liste au format texte, prête à coller. */
+function listeEnTexte() {
+  const modele = construireListe(D);
+  const lignes = ['Liste de courses — ' + D.semaine.libelle, ''];
+  modele.groupes.forEach(function (g) {
+    lignes.push(g.libelle.toUpperCase());
+    g.articles.forEach(function (a) {
+      lignes.push((a.coche ? '[x] ' : '- ') + a.nom + (a.texteQuantite ? ' — ' + a.texteQuantite : ''));
+    });
+    lignes.push('');
+  });
+  if (modele.placard.length) {
+    lignes.push('À VÉRIFIER AU PLACARD');
+    modele.placard.forEach(function (a) { lignes.push('- ' + a.nom + (a.texteQuantite ? ' — ' + a.texteQuantite : '')); });
+    lignes.push('');
+  }
+  if (afficherPrix()) {
+    lignes.push('Total estimé : ' + texteTotal(modele.totaux.totalTous, modele.totaux.sansPrixTous));
+  }
+  return lignes.join('\n');
+}
+
+async function copierListe() {
+  const texte = listeEnTexte();
+  let ok = false;
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(texte);
+      ok = true;
+    }
+  } catch (e) { ok = false; }
+  if (!ok) {
+    try {
+      const ta = document.createElement('textarea');
+      ta.value = texte;
+      ta.setAttribute('readonly', '');
+      ta.style.position = 'fixed'; ta.style.opacity = '0';
+      document.body.appendChild(ta);
+      ta.select();
+      ok = document.execCommand('copy');
+      ta.remove();
+    } catch (e) { ok = false; }
+  }
+  if (ok) { toast('Liste copiée.'); return; }
+  const zone = el('textarea', { rows: '12', readonly: true });
+  zone.value = texte;
+  ouvrirModale({
+    titre: 'Copier la liste',
+    corps: [el('p', { class: 'pt doux', text: 'La copie automatique a échoué. Sélectionnez le texte ci-dessous et copiez-le.' }), zone],
+    actions: [{ label: 'Fermer', variant: 'principal', onClick: function (f) { f(); } }],
+  });
+  setTimeout(function () { zone.focus(); zone.select(); }, 50);
+}
+
+/* --- Garder l'écran allumé (silencieusement ignoré si indisponible) --- */
+let verrouEcran = null;
+async function basculerWakeLock(actif) {
+  etat.ecranAllume = actif;
+  try {
+    if (actif) {
+      if (!('wakeLock' in navigator)) return;
+      verrouEcran = await navigator.wakeLock.request('screen');
+      verrouEcran.addEventListener('release', function () { verrouEcran = null; });
+    } else if (verrouEcran) {
+      await verrouEcran.release();
+      verrouEcran = null;
+    }
+  } catch (e) {
+    etat.ecranAllume = false;
+  }
+}
+document.addEventListener('visibilitychange', function () {
+  if (document.visibilityState === 'visible' && etat.ecranAllume && !verrouEcran) basculerWakeLock(true);
+});
+
+/* --- 5.3 Recettes : bibliothèque et formulaire --- */
+
+function vueRecettes() {
+  const v = $('#vue-recettes');
+  if (etat.editionRecette) {
+    if (etat.editeurDom && etat.editeurDom.isConnected) { majApercuRecette(); return; }
+    v.innerHTML = '';
+    v.appendChild(construireEditeurRecette());
+    return;
+  }
+  etat.editeurDom = null;
+  v.innerHTML = '';
+
+  const champRecherche = el('input', { type: 'search', placeholder: 'Rechercher une recette…', 'aria-label': 'Rechercher une recette' });
+  const grille = el('div', { class: 'grille-recettes' });
+  champRecherche.addEventListener('input', remplir);
+  v.appendChild(el('div', { class: 'recherche' }, [
+    champRecherche,
+    el('button', { type: 'button', class: 'btn principal', text: '＋ Nouvelle recette', onclick: function () { ouvrirEditeurRecette(null); } }),
+  ]));
+  v.appendChild(grille);
+
+  function remplir() {
+    grille.innerHTML = '';
+    const q = normaliserNom(champRecherche.value);
+    const recettes = D.recettes.filter(function (r) {
+      if (!q) return true;
+      return normaliserNom(r.nom).indexOf(q) >= 0 || r.tags.some(function (t) { return normaliserNom(t).indexOf(q) >= 0; });
+    }).sort(function (a, b) { return a.nom.localeCompare(b.nom, 'fr'); });
+
+    if (!recettes.length) {
+      grille.appendChild(el('div', { class: 'rien', text: D.recettes.length ? 'Aucune recette ne correspond.' : 'Aucune recette. Créez la première.' }));
+      return;
+    }
+    recettes.forEach(function (r) {
+      const c = coutRecette(D, r, r.portionsDefaut);
+      const meta = el('div', { class: 'meta' });
+      if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
+      meta.appendChild(el('span', { class: 'puce', text: r.lignes.length + ' ingrédient' + (r.lignes.length > 1 ? 's' : '') }));
+      r.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
+      if (afficherPrix()) {
+        meta.appendChild(el('span', { class: 'puce accent', text: (c.total > 0 ? formatEuroFixe(c.parPortion) : '—') + ' / portion' + (c.sansPrix ? ' ≥' : '') }));
+      }
+      const carte = el('div', { class: 'carte carte-recette' }, [
+        el('div', { class: 'infos' }, [el('div', { class: 'nom', text: r.nom }), meta]),
+        el('div', { style: 'display:flex;flex-direction:column;gap:.25rem' }, [
+          el('button', { type: 'button', class: 'btn mini', text: 'Modifier', onclick: function () { ouvrirEditeurRecette(r); } }),
+          el('button', { type: 'button', class: 'btn mini', text: 'Dupliquer', onclick: function () { dupliquerRecette(r); } }),
+          el('button', { type: 'button', class: 'btn mini danger', text: 'Supprimer', onclick: function () { supprimerRecette(r); } }),
+        ]),
+      ]);
+      grille.appendChild(carte);
+    });
+  }
+  remplir();
+}
+
+function ouvrirEditeurRecette(recette) {
+  const copie = recette
+    ? JSON.parse(JSON.stringify(recette))
+    : { id: null, nom: '', tags: [], tempsPreparationMin: null, portionsDefaut: 4, derniereUtilisation: null, notes: '', lignes: [] };
+  if (!copie.lignes.length) copie.lignes.push(ligneVide());
+  etat.editionRecette = { travail: copie, idOriginal: recette ? recette.id : null };
+  etat.editeurDom = null;
+  allerA('recettes');
+}
+function ligneVide() { return { ingredientId: null, quantite: null, unite: '', fixe: false }; }
+
+function fermerEditeurRecette() {
+  etat.editionRecette = null;
+  etat.editeurDom = null;
+  rendre();
+}
+
+function construireEditeurRecette() {
+  const ed = etat.editionRecette;
+  const r = ed.travail;
+  const racine = el('div');
+  etat.editeurDom = racine;
+
+  // En-tête : titre, coût par portion, actions
+  const enteteCout = el('span', { class: 'puce accent', text: '' });
+  racine.appendChild(el('div', { class: 'barre-actions', style: 'justify-content:space-between;align-items:center;margin-bottom:.6rem' }, [
+    el('h2', { style: 'margin:0', text: ed.idOriginal ? 'Modifier la recette' : 'Nouvelle recette' }),
+    enteteCout,
+  ]));
+
+  // Le piège n°1 de ce type d'application : le rappel reste visible en permanence.
+  racine.appendChild(el('div', { class: 'rappel', text: '⚠︎ Quantités pour 1 portion' }));
+
+  // Le formulaire à gauche, l'aperçu à droite sur grand écran ; dessous sur mobile.
+  const colonneForm = el('div', { class: 'col-form' });
+  const colonneApercu = el('div', { class: 'col-apercu' });
+  racine.appendChild(el('div', { class: 'editeur' }, [colonneForm, colonneApercu]));
+
+  const champNom = el('input', { type: 'text', value: r.nom, placeholder: 'Chili sin carne' });
+  champNom.addEventListener('input', function () { r.nom = champNom.value; majApercuRecette(); });
+  const champTemps = el('input', { type: 'text', inputmode: 'numeric', value: r.tempsPreparationMin || '', placeholder: 'ex. 35' });
+  champTemps.addEventListener('input', function () { r.tempsPreparationMin = parseNombre(champTemps.value); });
+  const champPortions = el('input', { type: 'text', inputmode: 'numeric', value: r.portionsDefaut, placeholder: '4' });
+  champPortions.addEventListener('input', function () {
+    const n = parseNombre(champPortions.value);
+    r.portionsDefaut = (n && n > 0) ? Math.min(99, Math.round(n)) : 4;
+    majApercuRecette();
+  });
+
+  colonneForm.appendChild(el('div', { class: 'carte' }, [
+    el('label', { class: 'champ' }, [el('span', { text: 'Nom de la recette' }), champNom]),
+    el('div', { class: 'ligne-champs' }, [
+      el('label', { class: 'champ' }, [el('span', { text: 'Temps de préparation (min)' }), champTemps]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Portions par défaut' }), champPortions]),
+    ]),
+    construireChampTags(r),
+  ]));
+
+  // Lignes d'ingrédients
+  const conteneurLignes = el('div', { class: 'lignes-ing', id: 'lignes-ing' });
+  colonneForm.appendChild(el('div', { class: 'carte' }, [
+    el('h3', { text: 'Ingrédients — quantités pour 1 portion' }),
+    conteneurLignes,
+    el('div', { class: 'barre-actions', style: 'margin-top:.5rem' }, [
+      el('button', { type: 'button', class: 'btn', text: '＋ Ajouter une ligne', onclick: function () { r.lignes.push(ligneVide()); rendreLignes({ index: r.lignes.length - 1, champ: 'ing' }); } }),
+    ]),
+    el('p', { class: 'tpt doux', text: 'Au clavier : Entrée sur l\'ingrédient valide la suggestion, Entrée sur la quantité crée la ligne suivante.' }),
+  ]));
+
+  // Notes
+  const champNotes = el('textarea', { placeholder: 'Étapes, astuces, source…' });
+  champNotes.value = r.notes || '';
+  champNotes.addEventListener('input', function () { r.notes = champNotes.value; });
+  colonneForm.appendChild(el('div', { class: 'carte' }, [
+    el('label', { class: 'champ' }, [el('span', { text: 'Notes' }), champNotes]),
+  ]));
+
+  // Aperçu en direct : vérifier d'un coup d'œil que la saisie par portion est cohérente.
+  const apercu = el('div', { class: 'carte apercu', id: 'apercu-recette' });
+  colonneApercu.appendChild(apercu);
+
+  // Actions
+  const actions = el('div', { class: 'barre-actions' }, [
+    el('button', { type: 'button', class: 'btn principal', text: 'Enregistrer', onclick: enregistrerRecette }),
+    el('button', { type: 'button', class: 'btn', text: 'Annuler', onclick: fermerEditeurRecette }),
+  ]);
+  if (ed.idOriginal) {
+    actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Dupliquer', onclick: function () { const o = recetteParId(ed.idOriginal); if (o) dupliquerRecette(o); } }));
+    actions.appendChild(el('button', { type: 'button', class: 'btn danger', text: 'Supprimer', onclick: function () { const o = recetteParId(ed.idOriginal); if (o) supprimerRecette(o, true); } }));
+  }
+  colonneForm.appendChild(el('div', { class: 'carte plate' }, [actions]));
+
+  racine._enteteCout = enteteCout;
+  racine._apercu = apercu;
+  racine._lignes = conteneurLignes;
+
+  rendreLignes();
+  majApercuRecette();
+  setTimeout(function () { if (!r.nom) champNom.focus(); }, 0);
+  return racine;
+}
+
+function construireChampTags(r) {
+  const zone = el('div', { class: 'barre-actions', style: 'margin-bottom:.4rem' });
+  const champ = el('input', { type: 'text', placeholder: 'Ajouter un tag (végétarien, rapide…)' });
+  const boite = el('div', { style: 'position:relative;flex:1 1 200px' }, [champ]);
+
+  function redessiner() {
+    zone.innerHTML = '';
+    r.tags.forEach(function (t, i) {
+      zone.appendChild(el('span', { class: 'puce accent' }, [
+        el('span', { text: t }),
+        el('button', {
+          type: 'button', style: 'background:none;border:0;color:inherit;cursor:pointer;font:inherit;padding:0 0 0 .2rem;min-height:0',
+          text: '×', 'aria-label': 'Retirer le tag ' + t,
+          onclick: function () { r.tags.splice(i, 1); redessiner(); },
+        }),
+      ]));
+    });
+    if (!r.tags.length) zone.appendChild(el('span', { class: 'tpt doux', text: 'Aucun tag' }));
+  }
+  function ajouterTag(txt) {
+    const t = String(txt || '').trim();
+    if (t && r.tags.indexOf(t) < 0) r.tags.push(t);
+    champ.value = '';
+    redessiner();
+  }
+  attacherAutocompletion(champ, {
+    items: function () {
+      return tousLesTags().filter(function (t) { return r.tags.indexOf(t) < 0; })
+        .map(function (t) { return { cle: t, libelle: t }; });
+    },
+    surChoix: function (it) { ajouterTag(it.libelle); },
+    surCreation: function (txt) { ajouterTag(txt); },
+    libelleCreation: function (txt) { return '＋ Ajouter le tag « ' + txt + ' »'; },
+    surEntreeVide: function (txt) { ajouterTag(txt); },
+  });
+  redessiner();
+  return el('div', { class: 'champ' }, [
+    el('span', { style: 'display:block;font-size:.82rem;font-weight:600;color:var(--texte-doux);margin-bottom:.2rem', text: 'Tags' }),
+    zone, boite,
+  ]);
+}
+
+function rendreLignes(focusCible) {
+  const ed = etat.editionRecette;
+  if (!ed || !etat.editeurDom) return;
+  const r = ed.travail;
+  const conteneur = etat.editeurDom._lignes;
+  conteneur.innerHTML = '';
+
+  r.lignes.forEach(function (ligne, index) {
+    const ing = ligne.ingredientId ? ingredientParId(ligne.ingredientId) : null;
+
+    const champIng = el('input', { type: 'text', value: ing ? ing.nom : '', placeholder: 'Ingrédient…', 'aria-label': 'Ingrédient' });
+    const boiteIng = el('div', { style: 'position:relative;min-width:0' }, [champIng]);
+    attacherAutocompletion(champIng, {
+      items: function () {
+        return D.ingredients.map(function (i) {
+          return { cle: i.id, libelle: i.nom, alias: i.aliases, secondaire: RAYON_LIBELLE[i.rayon] };
+        });
+      },
+      surChoix: function (it) { affecterIngredient(index, it.cle); },
+      surCreation: function (txt) {
+        creerIngredient(txt, function (nouvel) { affecterIngredient(index, nouvel.id); });
+      },
+      libelleCreation: function (txt) { return '＋ Créer l\'ingrédient « ' + txt + ' »'; },
+    });
+    champIng.addEventListener('blur', function () {
+      // Un texte libre qui ne correspond à rien ne crée jamais d'ingrédient silencieusement.
+      setTimeout(function () {
+        const cour = ligne.ingredientId ? ingredientParId(ligne.ingredientId) : null;
+        if (champIng.isConnected) champIng.value = cour ? cour.nom : champIng.value;
+      }, 150);
+    });
+
+    const champQte = el('input', {
+      type: 'text', inputmode: 'decimal', 'aria-label': 'Quantité pour 1 portion',
+      value: (typeof ligne.quantite === 'number' && ligne.quantite !== null) ? formatNombre(ligne.quantite, 3) : '',
+      placeholder: 'qté',
+    });
+    champQte.addEventListener('input', function () { ligne.quantite = parseNombre(champQte.value); majApercuRecette(); });
+    champQte.addEventListener('keydown', function (ev) {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      if (index === r.lignes.length - 1) {
+        r.lignes.push(ligneVide());
+        rendreLignes({ index: r.lignes.length - 1, champ: 'ing' });
+      } else {
+        rendreLignes({ index: index + 1, champ: 'ing' });
+      }
+    });
+
+    // L'unité est strictement limitée à la famille de l'ingrédient : les familles sont étanches.
+    const champUnite = el('select', { 'aria-label': 'Unité' });
+    const unites = unitesDe(ing);
+    if (!unites.length) champUnite.appendChild(el('option', { value: '', text: '—' }));
+    unites.forEach(function (u) { champUnite.appendChild(el('option', { value: u, text: u, selected: ligne.unite === u })); });
+    if (unites.length && unites.indexOf(ligne.unite) < 0) { ligne.unite = unites[0]; champUnite.value = unites[0]; }
+    champUnite.disabled = !ing;
+    champUnite.addEventListener('change', function () { ligne.unite = champUnite.value; majApercuRecette(); });
+
+    const caseFixe = el('input', { type: 'checkbox', checked: !!ligne.fixe, 'aria-label': 'Quantité fixe' });
+    caseFixe.addEventListener('change', function () { ligne.fixe = caseFixe.checked; majApercuRecette(); });
+
+    const bloc = el('div', { class: 'ligne-ing' }, [
+      boiteIng,
+      champQte,
+      champUnite,
+      el('label', { class: 'inline-case zone-fixe', title: 'Ne se multiplie pas avec les portions' }, [caseFixe, el('span', { class: 'tpt', text: 'fixe' })]),
+      el('button', {
+        type: 'button', class: 'btn mini fantome', text: '✕', 'aria-label': 'Supprimer la ligne',
+        onclick: function () {
+          r.lignes.splice(index, 1);
+          if (!r.lignes.length) r.lignes.push(ligneVide());
+          rendreLignes();
+          majApercuRecette();
+        },
+      }),
+    ]);
+    conteneur.appendChild(bloc);
+    bloc._champIng = champIng;
+    bloc._champQte = champQte;
+  });
+
+  if (focusCible) {
+    const bloc = conteneur.children[focusCible.index];
+    if (bloc) {
+      const cible = focusCible.champ === 'qte' ? bloc._champQte : bloc._champIng;
+      if (cible) setTimeout(function () { cible.focus(); cible.select && cible.select(); }, 0);
+    }
+  }
+  majApercuRecette();
+}
+
+function affecterIngredient(index, ingredientId) {
+  const ed = etat.editionRecette;
+  if (!ed) return;
+  const ligne = ed.travail.lignes[index];
+  if (!ligne) return;
+  const ing = ingredientParId(ingredientId);
+  ligne.ingredientId = ingredientId;
+  const unites = unitesDe(ing);
+  if (unites.indexOf(ligne.unite) < 0) ligne.unite = unites[0] || '';
+  rendreLignes({ index: index, champ: 'qte' });
+}
+
+function majApercuRecette() {
+  const ed = etat.editionRecette;
+  if (!ed || !etat.editeurDom) return;
+  const r = ed.travail;
+  const apercu = etat.editeurDom._apercu;
+  const portions = r.portionsDefaut || 4;
+  apercu.innerHTML = '';
+  apercu.appendChild(el('h3', { style: 'margin:0', text: 'Pour ' + portions + ' portions' }));
+
+  const lignesValides = r.lignes.filter(function (l) { return l.ingredientId && l.quantite; });
+  if (!lignesValides.length) {
+    apercu.appendChild(el('p', { class: 'pt', text: 'Renseignez des ingrédients pour voir l\'aperçu.' }));
+    etat.editeurDom._enteteCout.textContent = '';
+    return;
+  }
+  const faux = { id: r.id || 'apercu', nom: r.nom, lignes: lignesValides, portionsDefaut: portions };
+  const donneesApercu = { ingredients: D.ingredients, recettes: [faux], reglages: D.reglages };
+  const agr = agregerSelection(donneesApercu, [{ recetteId: faux.id, portions: portions }]);
+  // On garde l'ordre de saisie : l'aperçu se relit ligne à ligne face au formulaire.
+  const ordreSaisie = [];
+  lignesValides.forEach(function (x) { if (ordreSaisie.indexOf(x.ingredientId) < 0) ordreSaisie.push(x.ingredientId); });
+  const ul = el('ul');
+  agr.lignes.slice().sort(function (a, b) {
+    return ordreSaisie.indexOf(a.ingredient.id) - ordreSaisie.indexOf(b.ingredient.id);
+  }).forEach(function (l) {
+    ul.appendChild(el('li', {
+      text: formatQuantiteBase(l.base, l.ingredient) + ' ' + elision(l.ingredient.nom.toLowerCase()) +
+        (lignesValides.find(function (x) { return x.ingredientId === l.ingredient.id && x.fixe; }) ? ' (fixe)' : ''),
+    }));
+  });
+  apercu.appendChild(ul);
+
+  if (afficherPrix()) {
+    const c = coutRecette(donneesApercu, faux, portions);
+    etat.editeurDom._enteteCout.textContent = (c.sansPrix ? '≥ ' : '') + formatEuroFixe(c.parPortion) + ' / portion';
+    apercu.appendChild(el('p', { class: 'tpt', text:
+      'Coût estimé : ' + texteTotal(c.total, c.sansPrix) + ' pour ' + portions + ' portions' +
+      ' (produits de placard exclus).' }));
+    // Les prix manquants sont modifiables ici même, sans quitter la recette.
+    const sansPrix = agr.lignes.filter(function (l) {
+      return !l.ingredient.placard && prixParUniteBase(l.ingredient) === null;
+    });
+    if (sansPrix.length) {
+      const barre = el('div', { class: 'barre-actions', style: 'margin-top:.3rem' }, [
+        el('span', { class: 'tpt', text: 'Sans prix :' }),
+      ]);
+      sansPrix.forEach(function (l) {
+        barre.appendChild(el('button', {
+          type: 'button', class: 'puce puce-bouton', text: '✎ ' + l.ingredient.nom,
+          onclick: function () { editionPrixRapide(l.ingredient, majApercuRecette); },
+        }));
+      });
+      apercu.appendChild(barre);
+    }
+  }
+}
+
+async function enregistrerRecette() {
+  const ed = etat.editionRecette;
+  const r = ed.travail;
+  const nom = (r.nom || '').trim();
+  if (!nom) { toast('Donnez un nom à la recette.'); return; }
+  const lignes = r.lignes.filter(function (l) { return l.ingredientId && typeof l.quantite === 'number' && l.quantite > 0; });
+  if (!lignes.length) {
+    const ok = await confirmer({ titre: 'Recette sans ingrédient', message: 'Aucune ligne complète (ingrédient + quantité). Enregistrer quand même ?', labelOk: 'Enregistrer' });
+    if (!ok) return;
+  }
+  const cible = ed.idOriginal ? recetteParId(ed.idOriginal) : null;
+  const enregistree = {
+    id: cible ? cible.id : genererId('rec', nom),
+    nom: nom,
+    tags: r.tags.slice(),
+    tempsPreparationMin: r.tempsPreparationMin,
+    portionsDefaut: r.portionsDefaut || 4,
+    derniereUtilisation: cible ? cible.derniereUtilisation : null,
+    notes: r.notes || '',
+    lignes: lignes.map(function (l) { return { ingredientId: l.ingredientId, quantite: l.quantite, unite: l.unite, fixe: !!l.fixe }; }),
+  };
+  if (cible) Object.assign(cible, enregistree);
+  else D.recettes.push(enregistree);
+  await sauvegarder();
+  etat.editionRecette = null;
+  etat.editeurDom = null;
+  rendre();
+  toast('Recette « ' + nom + ' » enregistrée.');
+}
+
+async function dupliquerRecette(recette) {
+  const copie = JSON.parse(JSON.stringify(recette));
+  copie.id = genererId('rec', recette.nom + ' copie');
+  copie.nom = recette.nom + ' (copie)';
+  copie.derniereUtilisation = null;
+  D.recettes.push(copie);
+  await sauvegarder();
+  etat.editionRecette = null;
+  etat.editeurDom = null;
+  rendre();
+  toast('Recette dupliquée.');
+}
+
+async function supprimerRecette(recette, depuisEditeur) {
+  const ok = await confirmer({
+    titre: 'Supprimer la recette',
+    message: 'Supprimer « ' + recette.nom + ' » ? Elle sera aussi retirée de la semaine en cours et des semaines types.',
+    labelOk: 'Supprimer', danger: true,
+  });
+  if (!ok) return;
+  const index = D.recettes.indexOf(recette);
+  const selAvant = D.semaine.selection.slice();
+  const typesAvant = JSON.parse(JSON.stringify(D.semainesTypes));
+  D.recettes.splice(index, 1);
+  D.semaine.selection = D.semaine.selection.filter(function (s) { return s.recetteId !== recette.id; });
+  D.semainesTypes.forEach(function (t) { t.selection = t.selection.filter(function (s) { return s.recetteId !== recette.id; }); });
+  await sauvegarder();
+  if (depuisEditeur) { etat.editionRecette = null; etat.editeurDom = null; }
+  rendre();
+  supprimerAvecAnnulation('Recette « ' + recette.nom + ' »', async function () {
+    D.recettes.splice(index, 0, recette);
+    D.semaine.selection = selAvant;
+    D.semainesTypes = typesAvant;
+    await sauvegarder();
+    rendre();
+  });
+}
+
+/* --- 5.4 Réglages --- */
+
+function vueReglages() {
+  const v = $('#vue-reglages');
+  const scroll = window.scrollY;
+  v.innerHTML = '';
+
+  /* Référentiel des ingrédients */
+  const carteRef = el('div', { class: 'carte' });
+  carteRef.appendChild(el('h2', { text: 'Référentiel des ingrédients' }));
+  const champRech = el('input', { type: 'search', placeholder: 'Rechercher un ingrédient…', value: etat.rechercheIngredients, 'aria-label': 'Rechercher un ingrédient' });
+  champRech.addEventListener('input', function () { etat.rechercheIngredients = champRech.value; remplirTable(); });
+  carteRef.appendChild(el('div', { class: 'recherche' }, [
+    champRech,
+    el('button', { type: 'button', class: 'btn', text: '＋ Nouvel ingrédient', onclick: function () { formulaireIngredient('', null); } }),
+  ]));
+  const wrap = el('div', { class: 'table-wrap' });
+  carteRef.appendChild(wrap);
+  const infoRef = el('p', { class: 'tpt doux' });
+  carteRef.appendChild(infoRef);
+  v.appendChild(carteRef);
+
+  function remplirTable() {
+    wrap.innerHTML = '';
+    const q = normaliserNom(etat.rechercheIngredients);
+    let liste = D.ingredients.filter(function (i) {
+      if (!q) return true;
+      return normaliserNom(i.nom).indexOf(q) >= 0 || i.aliases.some(function (a) { return normaliserNom(a).indexOf(q) >= 0; });
+    });
+    const tri = etat.triRef;
+    liste = liste.slice().sort(function (a, b) {
+      let x, y;
+      if (tri.colonne === 'rayon') { x = RAYON_LIBELLE[a.rayon]; y = RAYON_LIBELLE[b.rayon]; }
+      else if (tri.colonne === 'famille') { x = a.famille; y = b.famille; }
+      else if (tri.colonne === 'prix') {
+        x = (a.prix && typeof a.prix.valeur === 'number') ? a.prix.valeur : -1;
+        y = (b.prix && typeof b.prix.valeur === 'number') ? b.prix.valeur : -1;
+        return (x - y) * tri.sens;
+      } else if (tri.colonne === 'placard') { return ((a.placard ? 1 : 0) - (b.placard ? 1 : 0)) * tri.sens; }
+      else { x = a.nom; y = b.nom; }
+      return String(x).localeCompare(String(y), 'fr') * tri.sens;
+    });
+
+    const table = el('table', { class: 'ref' });
+    const thead = el('thead');
+    const trh = el('tr');
+    [['nom', 'Nom'], ['rayon', 'Rayon'], ['famille', 'Famille'], ['unite', 'Unité pièce'], ['prix', 'Prix'], ['placard', 'Placard'], ['aliases', 'Aliases'], ['actions', '']]
+      .forEach(function (c) {
+        const th = el('th', { text: c[1] + (etat.triRef.colonne === c[0] ? (etat.triRef.sens > 0 ? ' ▲' : ' ▼') : '') });
+        if (['nom', 'rayon', 'famille', 'prix', 'placard'].indexOf(c[0]) >= 0) {
+          th.addEventListener('click', function () {
+            if (etat.triRef.colonne === c[0]) etat.triRef.sens *= -1;
+            else etat.triRef = { colonne: c[0], sens: 1 };
+            remplirTable();
+          });
+        } else { th.style.cursor = 'default'; }
+        trh.appendChild(th);
+      });
+    thead.appendChild(trh);
+    table.appendChild(thead);
+
+    const tbody = el('tbody');
+    const utilisation = compterUtilisation();
+    liste.forEach(function (i) {
+      const tr = el('tr');
+
+      const cNom = el('input', { type: 'text', value: i.nom });
+      cNom.addEventListener('change', async function () {
+        const n = cNom.value.trim(); if (!n) { cNom.value = i.nom; return; }
+        i.nom = n; await sauvegarder(); rendre();
+      });
+      tr.appendChild(el('td', {}, [cNom]));
+
+      const cRayon = el('select');
+      RAYONS.forEach(function (rr) { cRayon.appendChild(el('option', { value: rr[0], text: rr[1], selected: i.rayon === rr[0] })); });
+      cRayon.addEventListener('change', async function () { i.rayon = cRayon.value; await sauvegarder(); });
+      tr.appendChild(el('td', {}, [cRayon]));
+
+      const cFam = el('select');
+      FAMILLES.forEach(function (f) { cFam.appendChild(el('option', { value: f[0], text: FAMILLE_COURT[f[0]], selected: i.famille === f[0] })); });
+      cFam.addEventListener('change', async function () {
+        i.famille = cFam.value;
+        i.unitePiece = i.famille === 'piece' ? (i.unitePiece || 'pièce') : null;
+        i.prix = { valeur: i.prix ? i.prix.valeur : null, par: PAR_PRIX_PAR_FAMILLE[i.famille] };
+        corrigerUnitesRecettes(i);
+        await sauvegarder(); remplirTable();
+      });
+      tr.appendChild(el('td', {}, [cFam]));
+
+      const cUnite = el('input', { type: 'text', value: i.unitePiece || '', list: 'dl-unites-piece', disabled: i.famille !== 'piece' });
+      cUnite.addEventListener('change', async function () {
+        i.unitePiece = cUnite.value.trim() || 'pièce';
+        corrigerUnitesRecettes(i);
+        await sauvegarder(); rendre();
+      });
+      tr.appendChild(el('td', {}, [cUnite]));
+
+      const cPrix = el('input', { type: 'text', inputmode: 'decimal', value: (i.prix && typeof i.prix.valeur === 'number') ? formatNombre(i.prix.valeur, 2) : '', placeholder: '—' });
+      cPrix.addEventListener('change', async function () {
+        i.prix = { valeur: parseNombre(cPrix.value), par: PAR_PRIX_PAR_FAMILLE[i.famille] };
+        await sauvegarder();
+      });
+      tr.appendChild(el('td', {}, [
+        el('div', { class: 'cellule-prix' }, [cPrix, el('span', { class: 'doux', text: PAR_PRIX_LIBELLE[PAR_PRIX_PAR_FAMILLE[i.famille]] })]),
+      ]));
+
+      const cPlacard = el('input', { type: 'checkbox', checked: !!i.placard, 'aria-label': 'Fond de placard' });
+      cPlacard.addEventListener('change', async function () { i.placard = cPlacard.checked; await sauvegarder(); });
+      tr.appendChild(el('td', {}, [cPlacard]));
+
+      const cAlias = el('input', { type: 'text', value: i.aliases.join(', '), placeholder: 'autres noms, séparés par des virgules' });
+      cAlias.addEventListener('change', async function () {
+        i.aliases = cAlias.value.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+        await sauvegarder();
+      });
+      tr.appendChild(el('td', {}, [cAlias]));
+
+      const n = utilisation.get(i.id) || 0;
+      tr.appendChild(el('td', { style: 'white-space:nowrap' }, [
+        el('span', { class: 'tpt doux', text: n ? n + ' rec.' : 'inutilisé' }),
+        ' ',
+        el('button', { type: 'button', class: 'btn mini', text: 'Fusionner', onclick: function () { modaleFusion(i); } }),
+        ' ',
+        el('button', { type: 'button', class: 'btn mini danger', text: '✕', 'aria-label': 'Supprimer ' + i.nom, onclick: function () { supprimerIngredient(i, n); } }),
+      ]));
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+    wrap.appendChild(table);
+    infoRef.textContent = liste.length + ' ingrédient' + (liste.length > 1 ? 's' : '') + ' sur ' + D.ingredients.length +
+      ' · la famille détermine les unités acceptées ; on ne convertit jamais entre familles.';
+  }
+  remplirTable();
+
+  /* Ordre des rayons */
+  const carteOrdre = el('div', { class: 'carte' });
+  carteOrdre.appendChild(el('h2', { text: 'Ordre des rayons' }));
+  carteOrdre.appendChild(el('p', { class: 'tpt doux', text: 'C\'est l\'ordre de parcours du magasin. Glissez les lignes, ou utilisez les flèches.' }));
+  carteOrdre.appendChild(construireOrdreRayons());
+  v.appendChild(carteOrdre);
+
+  /* Affichage */
+  const casePrix = el('input', { type: 'checkbox', checked: D.reglages.afficherPrix });
+  casePrix.addEventListener('change', async function () { D.reglages.afficherPrix = casePrix.checked; await sauvegarder(); rendre(); });
+  const selTheme = el('select', { style: 'max-width:200px' });
+  [['auto', 'Auto (système)'], ['clair', 'Clair'], ['sombre', 'Sombre']].forEach(function (t) {
+    selTheme.appendChild(el('option', { value: t[0], text: t[1], selected: D.reglages.theme === t[0] }));
+  });
+  selTheme.addEventListener('change', async function () { D.reglages.theme = selTheme.value; await sauvegarder(); appliquerTheme(); });
+  v.appendChild(el('div', { class: 'carte' }, [
+    el('h2', { text: 'Affichage' }),
+    el('label', { class: 'inline-case' }, [casePrix, el('span', { text: 'Afficher les prix' })]),
+    el('label', { class: 'champ', style: 'margin-top:.5rem' }, [el('span', { text: 'Thème' }), selTheme]),
+  ]));
+
+  /* Sauvegarde */
+  v.appendChild(el('div', { class: 'carte' }, [
+    el('h2', { text: 'Sauvegarde de vos données' }),
+    el('p', { class: 'pt doux', text: 'Vos données ne quittent jamais cet appareil. L\'export est votre seule sauvegarde : faites-en un de temps en temps.' }),
+    el('div', { class: 'barre-actions' }, [
+      el('button', { type: 'button', class: 'btn principal', text: '⭳ Exporter les données', onclick: exporterDonnees }),
+      el('button', { type: 'button', class: 'btn', text: '⭱ Importer un fichier', onclick: importerDonnees }),
+    ]),
+  ]));
+
+  /* Historique */
+  const carteHisto = el('div', { class: 'carte' });
+  carteHisto.appendChild(el('h2', { text: 'Historique des semaines' }));
+  if (!D.historique.length) {
+    carteHisto.appendChild(el('p', { class: 'doux pt', text: 'Aucune semaine archivée. Une semaine est archivée quand vous la videz depuis l\'onglet Semaine.' }));
+  } else {
+    D.historique.forEach(function (h, idx) {
+      const noms = h.selection.map(function (s) { const r = recetteParId(s.recetteId); return r ? r.nom + ' ×' + s.portions : null; }).filter(Boolean);
+      carteHisto.appendChild(el('div', { class: 'carte plate', style: 'margin:.3rem 0' }, [
+        el('div', { class: 'barre-actions', style: 'justify-content:space-between;align-items:baseline' }, [
+          el('span', { class: 'gras', text: h.libelle || formatDateCourte(h.date) }),
+          afficherPrix() ? el('span', { class: 'puce accent', text: formatEuroFixe(h.coutEstime) }) : null,
+        ]),
+        el('div', { class: 'tpt doux', text: formatDateCourte(h.date) + ' · ' + (noms.join(' · ') || 'aucune recette conservée') }),
+        el('div', { class: 'barre-actions', style: 'margin-top:.3rem' }, [
+          el('button', { type: 'button', class: 'btn mini', text: 'Reprendre cette semaine', onclick: async function () {
+            D.semaine.selection = nettoyerSelection(h.selection, new Set(D.recettes.map(function (r) { return r.id; })));
+            D.semaine.coches = {};
+            await sauvegarder(); allerA('semaine'); toast('Sélection reprise.');
+          } }),
+          el('button', { type: 'button', class: 'btn mini danger', text: 'Retirer', onclick: async function () {
+            const copie = D.historique[idx];
+            D.historique.splice(idx, 1);
+            await sauvegarder(); vueReglages();
+            supprimerAvecAnnulation('Entrée d\'historique', async function () {
+              D.historique.splice(idx, 0, copie); await sauvegarder(); vueReglages();
+            });
+          } }),
+        ]),
+      ]));
+    });
+  }
+  v.appendChild(carteHisto);
+
+  /* Zone dangereuse */
+  v.appendChild(el('div', { class: 'carte' }, [
+    el('h2', { text: 'Repartir de zéro' }),
+    el('p', { class: 'pt doux', text: 'Efface tout : ingrédients, recettes, semaine, historique. Pensez à exporter avant.' }),
+    el('button', { type: 'button', class: 'btn danger', text: 'Effacer toutes les données', onclick: effacerTout }),
+  ]));
+
+  v.appendChild(el('p', { class: 'tpt doux', style: 'text-align:center;margin-top:1rem' , text: 'Liste de courses — fichier autonome, aucune connexion réseau, aucune télémétrie.' }));
+
+  window.scrollTo(0, scroll);
+}
+
+function compterUtilisation() {
+  const m = new Map();
+  D.recettes.forEach(function (r) {
+    const vus = new Set();
+    r.lignes.forEach(function (l) {
+      if (vus.has(l.ingredientId)) return;
+      vus.add(l.ingredientId);
+      m.set(l.ingredientId, (m.get(l.ingredientId) || 0) + 1);
+    });
+  });
+  return m;
+}
+
+async function supprimerIngredient(ingredient, nbRecettes) {
+  const ok = await confirmer({
+    titre: 'Supprimer l\'ingrédient',
+    message: nbRecettes
+      ? '« ' + ingredient.nom + ' » est utilisé dans ' + nbRecettes + ' recette' + (nbRecettes > 1 ? 's' : '') + '. Il en sera retiré.'
+      : 'Supprimer « ' + ingredient.nom + ' » du référentiel ?',
+    labelOk: 'Supprimer', danger: true,
+  });
+  if (!ok) return;
+  const index = D.ingredients.indexOf(ingredient);
+  const lignesAvant = D.recettes.map(function (r) { return { id: r.id, lignes: r.lignes.slice() }; });
+  D.ingredients.splice(index, 1);
+  D.recettes.forEach(function (r) { r.lignes = r.lignes.filter(function (l) { return l.ingredientId !== ingredient.id; }); });
+  delete D.semaine.coches[ingredient.id];
+  await sauvegarder();
+  rendre();
+  supprimerAvecAnnulation('Ingrédient « ' + ingredient.nom + ' »', async function () {
+    D.ingredients.splice(index, 0, ingredient);
+    lignesAvant.forEach(function (x) { const r = recetteParId(x.id); if (r) r.lignes = x.lignes; });
+    await sauvegarder(); rendre();
+  });
+}
+
+function modaleFusion(source) {
+  const candidats = D.ingredients.filter(function (i) { return i.id !== source.id; });
+  if (!candidats.length) { toast('Aucun autre ingrédient.'); return; }
+  const select = el('select');
+  select.appendChild(el('option', { value: '', text: '— choisir —' }));
+  candidats.slice().sort(function (a, b) { return a.nom.localeCompare(b.nom, 'fr'); })
+    .forEach(function (i) { select.appendChild(el('option', { value: i.id, text: i.nom + ' (' + FAMILLE_COURT[i.famille] + ')' })); });
+  const avert = el('div', { class: 'avert', hidden: true });
+  select.addEventListener('change', function () {
+    const cible = ingredientParId(select.value);
+    if (!cible) { avert.hidden = true; return; }
+    if (cible.famille !== source.famille) {
+      avert.hidden = false;
+      avert.textContent = 'Familles différentes (' + FAMILLE_COURT[source.famille] + ' / ' + FAMILLE_COURT[cible.famille] + ') : la fusion est impossible, on ne convertit jamais entre familles.';
+    } else if (source.famille === 'piece' && cible.unitePiece !== source.unitePiece) {
+      avert.hidden = false;
+      avert.textContent = 'Unités de pièce différentes (« ' + source.unitePiece + ' » et « ' + cible.unitePiece + ' ») : les quantités garderont leur valeur et prendront l\'unité « ' + cible.unitePiece + ' ». Vérifiez les recettes après la fusion.';
+    } else { avert.hidden = true; }
+  });
+  ouvrirModale({
+    titre: 'Fusionner « ' + source.nom + ' »',
+    corps: [
+      el('p', { class: 'pt', text: '« ' + source.nom + ' » deviendra un alias de l\'ingrédient choisi. Toutes les recettes seront mises à jour.' }),
+      el('label', { class: 'champ' }, [el('span', { text: 'Conserver l\'ingrédient' }), select]),
+      avert,
+    ],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      {
+        label: 'Fusionner', variant: 'principal',
+        onClick: async function (f) {
+          const cible = ingredientParId(select.value);
+          if (!cible) { toast('Choisissez un ingrédient.'); return; }
+          if (cible.famille !== source.famille) { toast('Fusion impossible entre familles différentes.'); return; }
+          f();
+          await fusionnerIngredients(source.id, cible.id);
+        },
+      },
+    ],
+  });
+}
+
+function construireOrdreRayons() {
+  const ul = el('ul', { class: 'liste-ordre' });
+  let indexDrag = null;
+
+  function redessiner() {
+    ul.innerHTML = '';
+    D.reglages.ordreRayons.forEach(function (r, i) {
+      const li = el('li', { draggable: 'true', 'data-i': i }, [
+        el('span', { class: 'poignee', 'aria-hidden': 'true', text: '⠿' }),
+        el('span', { class: 'nom', text: RAYON_LIBELLE[r] }),
+        el('button', { type: 'button', class: 'btn mini fantome', text: '↑', 'aria-label': 'Monter ' + RAYON_LIBELLE[r], disabled: i === 0, onclick: function () { deplacer(i, i - 1); } }),
+        el('button', { type: 'button', class: 'btn mini fantome', text: '↓', 'aria-label': 'Descendre ' + RAYON_LIBELLE[r], disabled: i === D.reglages.ordreRayons.length - 1, onclick: function () { deplacer(i, i + 1); } }),
+      ]);
+      li.addEventListener('dragstart', function (ev) {
+        indexDrag = i; li.classList.add('drag');
+        try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(i)); } catch (e) {}
+      });
+      li.addEventListener('dragend', function () { indexDrag = null; redessiner(); });
+      li.addEventListener('dragover', function (ev) { ev.preventDefault(); li.classList.add('survol'); });
+      li.addEventListener('dragleave', function () { li.classList.remove('survol'); });
+      li.addEventListener('drop', function (ev) {
+        ev.preventDefault(); li.classList.remove('survol');
+        let src = indexDrag;
+        if (src === null) { const t = parseNombre(ev.dataTransfer.getData('text/plain')); src = (t === null) ? null : t; }
+        if (src === null || src === i) return;
+        deplacer(src, i);
+      });
+      ul.appendChild(li);
+    });
+  }
+  async function deplacer(de, vers) {
+    const arr = D.reglages.ordreRayons;
+    if (vers < 0 || vers >= arr.length) return;
+    const [x] = arr.splice(de, 1);
+    arr.splice(vers, 0, x);
+    await sauvegarder();
+    redessiner();
+  }
+  redessiner();
+  return ul;
+}
+
+/* --- Export / import --- */
+async function exporterDonnees() {
+  await Store.flush();
+  const json = await Store.export();
+  const nom = 'liste-courses-' + aujourdHuiISO() + '.json';
+  try {
+    const blob = new Blob([json], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = el('a', { href: url, download: nom });
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    toast('Export « ' + nom + ' » téléchargé.');
+  } catch (e) {
+    const zone = el('textarea', { rows: '12' });
+    zone.value = json;
+    ouvrirModale({
+      titre: 'Exporter',
+      corps: [el('p', { class: 'pt doux', text: 'Le téléchargement a échoué. Copiez le contenu ci-dessous dans un fichier .json.' }), zone],
+      actions: [{ label: 'Fermer', variant: 'principal', onClick: function (f) { f(); } }],
+    });
+  }
+}
+
+function importerDonnees() {
+  const input = el('input', { type: 'file', accept: '.json,application/json', style: 'position:fixed;left:-9999px' });
+  document.body.appendChild(input);
+  input.addEventListener('change', function () {
+    const f = input.files && input.files[0];
+    if (!f) { input.remove(); return; }
+    const lecteur = new FileReader();
+    lecteur.onload = function () {
+      input.remove();
+      ecranConfirmationImport(String(lecteur.result), f.name);
+    };
+    lecteur.onerror = function () { input.remove(); toast('Lecture du fichier impossible.'); };
+    lecteur.readAsText(f);
+  });
+  input.click();
+}
+
+function ecranConfirmationImport(texte, nomFichier) {
+  let candidat;
+  try { candidat = JSON.parse(texte); }
+  catch (e) { toast('Fichier illisible : ce n\'est pas du JSON valide.'); return; }
+  let apercu;
+  try { apercu = normaliserRacine(candidat); }
+  catch (e) { toast('Fichier inattendu : ' + e.message); return; }
+
+  const tableau = el('div', { class: 'lignes-ing' });
+  [
+    ['Ingrédients', D.ingredients.length, apercu.ingredients.length],
+    ['Recettes', D.recettes.length, apercu.recettes.length],
+    ['Recettes dans la semaine', D.semaine.selection.length, apercu.semaine.selection.length],
+    ['Articles ajoutés à la main', D.semaine.ajoutsManuels.length, apercu.semaine.ajoutsManuels.length],
+    ['Semaines types', D.semainesTypes.length, apercu.semainesTypes.length],
+    ['Semaines dans l\'historique', D.historique.length, apercu.historique.length],
+  ].forEach(function (l) {
+    tableau.appendChild(el('div', { class: 'ligne-ing', style: 'grid-template-columns:1fr auto' }, [
+      el('span', { text: l[0] }),
+      el('span', { class: 'gras', text: l[1] + ' → ' + l[2] }),
+    ]));
+  });
+
+  ouvrirModale({
+    titre: 'Importer « ' + nomFichier + ' »',
+    corps: [
+      el('div', { class: 'avert', text: 'Tout le contenu actuel sera remplacé par celui du fichier. Cette action n\'est pas annulable.' }),
+      el('p', { class: 'pt doux', text: 'Ce qui sera remplacé (actuel → importé) :' }),
+      tableau,
+    ],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      { label: 'Exporter d\'abord', onClick: function () { exporterDonnees(); } },
+      {
+        label: 'Remplacer', variant: 'danger',
+        onClick: async function (f) {
+          try {
+            D = await Store.import(texte);
+          } catch (e) { toast(e.message || 'Import impossible.'); return; }
+          f();
+          etat.editionRecette = null; etat.editeurDom = null;
+          appliquerTheme();
+          allerA('semaine');
+          toast('Données importées.');
+        },
+      },
+    ],
+  });
+}
+
+async function effacerTout() {
+  const ok = await confirmer({
+    titre: 'Effacer toutes les données',
+    message: 'Ingrédients, recettes, semaine en cours, semaines types et historique seront définitivement supprimés.',
+    labelOk: 'Tout effacer', danger: true,
+  });
+  if (!ok) return;
+  const ok2 = await confirmer({
+    titre: 'Confirmer',
+    message: 'Dernière confirmation : cette action est irréversible. Avez-vous exporté vos données ?',
+    labelOk: 'Oui, tout effacer', danger: true,
+  });
+  if (!ok2) return;
+  D = donneesVides();
+  await Store.reset(D);
+  etat.editionRecette = null; etat.editeurDom = null;
+  allerA('semaine');
+  toast('Toutes les données ont été effacées.');
+}
+
+/* ——— DÉMARRAGE ——————————————————————————————————————————————————————————— */
+
+function signalerModeDegrade() {
+  const b = $('#bandeau-degrade');
+  if (!b.hidden) return;
+  b.hidden = false;
+  b.textContent = '';
+  b.appendChild(document.createTextNode('Sauvegarde impossible dans ce navigateur — pense à exporter tes données avant de fermer. '));
+  b.appendChild(el('button', {
+    type: 'button', class: 'btn mini', style: 'margin-left:.4rem', text: 'Exporter maintenant',
+    onclick: exporterDonnees,
+  }));
+}
+
+async function demarrer() {
+  Store.surPanne(function () { signalerModeDegrade(); });
+
+  let chargees = null;
+  try { chargees = await Store.load(); }
+  catch (e) { chargees = null; }
+
+  if (chargees) {
+    D = chargees;
+  } else {
+    // Premier lancement (ou stockage illisible) : jeu de données de démarrage.
+    D = donneesExemple();
+    await Store.save(D);
+    await Store.flush();
+  }
+  if (Store.modeMemoire()) signalerModeDegrade();
+
+  appliquerTheme();
+  $$('#tabbar button').forEach(function (b) {
+    b.addEventListener('click', function () { allerA(b.dataset.tab); });
+  });
+
+  // Hauteur réelle de la barre de titre, pour que l'en-tête de la liste se cale
+  // juste dessous au lieu de disparaître derrière.
+  const mesurerEntete = function () {
+    const h = $('.topbar').offsetHeight;
+    document.documentElement.style.setProperty('--h-topbar', h + 'px');
+  };
+  mesurerEntete();
+  window.addEventListener('resize', mesurerEntete);
+  window.addEventListener('orientationchange', mesurerEntete);
+
+  // La liste de suggestions d'unités est utilisée par plusieurs formulaires.
+  const dl = el('datalist', { id: 'dl-unites-piece' });
+  UNITES_PIECE_SUGGEREES.forEach(function (u) { dl.appendChild(el('option', { value: u })); });
+  document.body.appendChild(dl);
+
+  allerA('semaine');
+
+  // On force l'écriture en attente avant que l'onglet ne disparaisse.
+  const vider = function () { Store.flush(); };
+  window.addEventListener('pagehide', vider);
+  window.addEventListener('beforeunload', vider);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'hidden') vider();
+  });
+
+  // À l'impression, on déplie les rayons repliés puis on rétablit l'affichage.
+  let repliesAvantImpression = [];
+  window.addEventListener('beforeprint', function () {
+    repliesAvantImpression = $$('details.rayon').filter(function (d) { return !d.open; });
+    repliesAvantImpression.forEach(function (d) { d.open = true; });
+  });
+  window.addEventListener('afterprint', function () {
+    repliesAvantImpression.forEach(function (d) { d.open = false; });
+    repliesAvantImpression = [];
+  });
+
+  // Le thème « auto » suit le système en direct.
+  if (window.matchMedia) {
+    const mq = window.matchMedia('(prefers-color-scheme: dark)');
+    const surChangement = function () { if (D && D.reglages.theme === 'auto') appliquerTheme(); };
+    if (mq.addEventListener) mq.addEventListener('change', surChangement);
+    else if (mq.addListener) mq.addListener(surChangement);
+  }
+}
+
+demarrer();
+</script>
+</body>
+</html>
