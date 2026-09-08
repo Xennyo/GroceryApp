@@ -196,7 +196,6 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 @media (min-width:640px){ .grille-recettes{ grid-template-columns:1fr 1fr; } }
 .carte-recette{ display:flex; gap:.6rem; align-items:flex-start; }
 .carte-recette .infos{ flex:1; min-width:0; }
-.carte-recette .nom{ font-weight:650; overflow-wrap:anywhere; }
 .carte-recette .meta{ font-size:.8rem; color:var(--texte-doux); display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.15rem; }
 .carte-recette.selectionnee{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
 .stepper{ display:inline-flex; align-items:center; border:1px solid var(--border-fort); border-radius:999px; overflow:hidden; background:var(--surface); }
@@ -205,6 +204,33 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 .stepper button:hover{ background:var(--bg-alt); }
 .stepper .valeur{ min-width:62px; text-align:center; font-size:.85rem; font-weight:650; padding:0 .2rem; }
 .recap{ position:sticky; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:20; }
+.barre-portions{
+  display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
+  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  padding:.4rem .6rem; margin-bottom:.6rem;
+}
+.barre-portions .libelle{ font-weight:650; font-size:.95rem; flex:1 1 120px; min-width:0; }
+.filtres{ display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; margin-bottom:.6rem; }
+.puce-filtre{
+  display:inline-flex; align-items:center; gap:.25rem; cursor:pointer; font:inherit;
+  background:var(--surface); border:1px solid var(--border-fort); color:var(--texte);
+  border-radius:999px; padding:.3rem .7rem; font-size:.82rem; font-weight:600;
+  min-height:40px; white-space:nowrap;
+  transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.puce-filtre:hover{ background:var(--bg-alt); }
+.puce-filtre[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:var(--accent-texte); }
+.filtres .separateur{ width:1px; align-self:stretch; background:var(--border); margin:.2rem .15rem; }
+/* Le nom d'une recette ouvre sa fiche : il faut que ça se voie, et au clavier aussi. */
+.carte-recette .nom{
+  font-weight:650; overflow-wrap:anywhere; text-align:left; font:inherit; font-weight:650;
+  background:none; border:0; padding:0; color:var(--texte); cursor:pointer;
+  display:inline-flex; align-items:baseline; gap:.35rem;
+}
+.carte-recette .nom:hover{ color:var(--accent); text-decoration:underline; }
+.carte-recette .nom .loupe{ font-size:.8em; color:var(--texte-doux); }
+.apercu-fiche ul{ margin:.3rem 0 .6rem; padding-left:1.15rem; }
+.apercu-fiche .notes{ white-space:pre-wrap; background:var(--surface-2); border-radius:8px; padding:.5rem .6rem; font-size:.92rem; }
 @media (min-width:900px){ .recap{ bottom:.75rem; } }
 
 /* ——— LISTE ——— */
@@ -482,6 +508,7 @@ function donneesVides() {
       ordreRayons: ORDRE_RAYONS_DEFAUT.slice(),
       afficherPrix: true,
       theme: 'auto',
+      portionsBase: 4,
     },
   };
 }
@@ -665,6 +692,7 @@ function normaliserRacine(d) {
     ordreRayons: ordre,
     afficherPrix: g.afficherPrix !== false,
     theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
+    portionsBase: (typeof g.portionsBase === 'number' && g.portionsBase > 0) ? Math.min(99, Math.round(g.portionsBase)) : 4,
   };
   return out;
 }
@@ -883,6 +911,11 @@ function formatEuroFixe(n) {
 // Faute de dictionnaire, on liste les h muets qu'on croise en cuisine et on
 // considère tous les autres comme aspirés.
 const H_MUET = ['huile', 'herbe', 'huitre', 'hysope', 'haché', 'hache'];
+/** Seule l'initiale passe en minuscule : « Herbes de Provence » garde sa majuscule. */
+function minusculeInitiale(nom) {
+  const n = String(nom || '');
+  return n.charAt(0).toLowerCase() + n.slice(1);
+}
 /** Élision devant une voyelle : « de tomates », mais « d'œufs ». */
 function elision(nom) {
   const n = String(nom || '');
@@ -1152,6 +1185,75 @@ function construireListe(donnees) {
       sansPrixRestant: sansPrixRestant,
     },
   };
+}
+
+/* --- Recherche et filtres du catalogue de recettes (§5.1) --- */
+
+/**
+ * Ingrédients d'une recette dont le nom ou un alias correspond à la recherche.
+ * C'est ce qui permet de partir de ce qu'on a dans le frigo : « courgette »
+ * remonte les recettes qui en contiennent, pas seulement celles qui le disent
+ * dans leur titre.
+ * → [nom d'ingrédient], vide si aucune correspondance.
+ */
+function ingredientsCorrespondants(recette, texte, parIngredient) {
+  const q = normaliserNom(texte);
+  if (!q) return [];
+  const trouves = [];
+  for (let i = 0; i < recette.lignes.length; i++) {
+    const ing = parIngredient.get(recette.lignes[i].ingredientId);
+    if (!ing) continue;
+    if (trouves.indexOf(ing.nom) >= 0) continue;
+    const cible = normaliserNom(ing.nom);
+    const viaAlias = ing.aliases.some(function (a) { return normaliserNom(a).indexOf(q) >= 0; });
+    if (cible.indexOf(q) >= 0 || viaAlias) trouves.push(ing.nom);
+  }
+  return trouves;
+}
+
+/**
+ * Filtre le catalogue de recettes. Fonction pure : elle ne lit que ses arguments.
+ * criteres = { texte, tag, tempsMax, fraicheur }
+ *   tempsMax   : minutes, 0 = pas de limite
+ *   fraicheur  : '' | 'jamais' (jamais faite) | 'oubliee' (pas faite depuis 30 jours)
+ * → [{ recette, ingredientsTrouves:[] }] — ingredientsTrouves n'est rempli que
+ *   lorsque c'est un ingrédient, et non le nom ou un tag, qui a fait mouche.
+ */
+function filtrerRecettes(donnees, criteres) {
+  const c = criteres || {};
+  const q = normaliserNom(c.texte);
+  const parIngredient = indexIngredients(donnees);
+  const resultat = [];
+
+  for (let i = 0; i < donnees.recettes.length; i++) {
+    const r = donnees.recettes[i];
+
+    if (c.tag && r.tags.indexOf(c.tag) < 0) continue;
+
+    if (c.tempsMax) {
+      // Une recette sans temps renseigné n'est pas écartée par un filtre de temps :
+      // l'absence d'information n'est pas une information.
+      if (typeof r.tempsPreparationMin === 'number' && r.tempsPreparationMin > c.tempsMax) continue;
+    }
+
+    if (c.fraicheur === 'jamais') {
+      if (r.derniereUtilisation) continue;
+    } else if (c.fraicheur === 'oubliee') {
+      const j = joursDepuis(r.derniereUtilisation);
+      if (j !== null && j < 30) continue;
+    }
+
+    let ingredientsTrouves = [];
+    if (q) {
+      const parNom = normaliserNom(r.nom).indexOf(q) >= 0;
+      const parTag = r.tags.some(function (t) { return normaliserNom(t).indexOf(q) >= 0; });
+      ingredientsTrouves = ingredientsCorrespondants(r, c.texte, parIngredient);
+      if (!parNom && !parTag && !ingredientsTrouves.length) continue;
+      if (parNom || parTag) ingredientsTrouves = [];
+    }
+    resultat.push({ recette: r, ingredientsTrouves: ingredientsTrouves });
+  }
+  return resultat;
 }
 
 /** Jours écoulés depuis une date ISO (aaaa-mm-jj). null si absente. */
@@ -1435,6 +1537,8 @@ const etat = {
   onglet: 'semaine',
   rechercheRecettes: '',
   tagFiltre: '',
+  filtreTempsMax: 0,               // minutes, 0 = pas de limite
+  filtreFraicheur: '',             // '' | 'jamais' | 'oubliee'
   rechercheIngredients: '',
   triRef: { colonne: 'nom', sens: 1 },
   editionRecette: null,            // { recette, nouvelle }
@@ -1692,7 +1796,11 @@ function selectionDe(recetteId) {
 }
 async function ajouterASemaine(recette) {
   if (selectionDe(recette.id)) return;
-  D.semaine.selection.push({ recetteId: recette.id, portions: recette.portionsDefaut || 4 });
+  // Le nombre de portions de base sert de valeur de départ : on le règle une
+  // fois en haut de l'écran au lieu de le ressaisir recette par recette.
+  const portions = D.reglages.portionsBase || 4;
+  D.semaine.selection.push({ recetteId: recette.id, portions: portions });
+  recette.portionsDefaut = portions;
   await sauvegarder();
   rendre();
 }
@@ -1726,68 +1834,133 @@ function vueSemaine() {
     ]));
   }
 
-  // Barre de recherche + filtre par tag
-  const champRecherche = el('input', { type: 'search', placeholder: 'Rechercher une recette…', value: etat.rechercheRecettes, 'aria-label': 'Rechercher une recette' });
+  // Portions de base : on la règle une fois, elle pré-remplit chaque ajout.
+  const valeurPortions = el('span', { class: 'valeur', text: D.reglages.portionsBase + ' pers.' });
+  v.appendChild(el('div', { class: 'barre-portions' }, [
+    el('span', { class: 'libelle', text: 'Je cuisine pour' }),
+    el('div', { class: 'stepper' }, [
+      el('button', { type: 'button', text: '−', 'aria-label': 'Moins de personnes', onclick: function () { changerPortionsBase(-1); } }),
+      valeurPortions,
+      el('button', { type: 'button', text: '+', 'aria-label': 'Plus de personnes', onclick: function () { changerPortionsBase(1); } }),
+    ]),
+  ]));
+
+  // Recherche : nom, tag ou ingrédient.
+  const champRecherche = el('input', { type: 'search', placeholder: 'Nom, tag ou ingrédient…', value: etat.rechercheRecettes, 'aria-label': 'Rechercher une recette par nom, tag ou ingrédient' });
   champRecherche.addEventListener('input', function () { etat.rechercheRecettes = champRecherche.value; remplirCartes(); });
-  const selectTag = el('select', { 'aria-label': 'Filtrer par tag' });
+  const selectTag = el('select', { 'aria-label': 'Filtrer par tag', style: 'flex:0 1 170px' });
   selectTag.appendChild(el('option', { value: '', text: 'Tous les tags' }));
   tousLesTags().forEach(function (t) { selectTag.appendChild(el('option', { value: t, text: t, selected: etat.tagFiltre === t })); });
   selectTag.addEventListener('change', function () { etat.tagFiltre = selectTag.value; remplirCartes(); });
   v.appendChild(el('div', { class: 'recherche' }, [champRecherche, selectTag]));
 
+  // Filtres : les questions qu'on se pose vraiment au moment de composer.
+  const zoneFiltres = el('div', { class: 'filtres' });
+  v.appendChild(zoneFiltres);
+
   const grille = el('div', { class: 'grille-recettes' });
   v.appendChild(grille);
 
-  // Récapitulatif toujours visible
   const recap = el('div', { class: 'carte recap', id: 'recap-semaine' });
   v.appendChild(recap);
 
-  const outils = el('div', { class: 'barre-actions', style: 'margin-top:.6rem' }, [
+  v.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.6rem' }, [
     el('button', { type: 'button', class: 'btn', text: 'Vider la semaine', onclick: viderSemaine }),
     el('button', { type: 'button', class: 'btn', text: 'Enregistrer comme semaine type', onclick: enregistrerSemaineType }),
-    el('button', { type: 'button', class: 'btn', text: 'Charger une semaine type', onclick: chargerSemaineType }),
+    el('button', { type: 'button', class: 'btn', text: 'Semaines types', onclick: chargerSemaineType }),
     el('button', { type: 'button', class: 'btn', text: 'Reprendre la semaine dernière', onclick: reprendreSemaineDerniere }),
-  ]);
-  v.appendChild(outils);
+  ]));
+
+  function bascule(libelle, actif, surClic) {
+    const b = el('button', { type: 'button', class: 'puce-filtre', text: libelle, 'aria-pressed': String(actif) });
+    b.addEventListener('click', surClic);
+    return b;
+  }
+
+  function remplirFiltres(nbTrouvees) {
+    zoneFiltres.innerHTML = '';
+    [[20, '≤ 20 min'], [45, '≤ 45 min']].forEach(function (f) {
+      zoneFiltres.appendChild(bascule(f[1], etat.filtreTempsMax === f[0], function () {
+        etat.filtreTempsMax = (etat.filtreTempsMax === f[0]) ? 0 : f[0];
+        remplirCartes();
+      }));
+    });
+    zoneFiltres.appendChild(el('span', { class: 'separateur', 'aria-hidden': 'true' }));
+    [['jamais', 'Jamais faite'], ['oubliee', 'Pas faite depuis 1 mois']].forEach(function (f) {
+      zoneFiltres.appendChild(bascule(f[1], etat.filtreFraicheur === f[0], function () {
+        etat.filtreFraicheur = (etat.filtreFraicheur === f[0]) ? '' : f[0];
+        remplirCartes();
+      }));
+    });
+    const filtre = etat.filtreTempsMax || etat.filtreFraicheur || etat.tagFiltre || etat.rechercheRecettes.trim();
+    if (filtre) {
+      zoneFiltres.appendChild(el('span', { class: 'tpt doux', style: 'margin-left:.2rem',
+        text: nbTrouvees + ' recette' + (nbTrouvees > 1 ? 's' : '') + ' sur ' + D.recettes.length }));
+      zoneFiltres.appendChild(el('button', {
+        type: 'button', class: 'btn mini fantome', text: 'Tout afficher',
+        onclick: function () {
+          etat.filtreTempsMax = 0; etat.filtreFraicheur = ''; etat.tagFiltre = ''; etat.rechercheRecettes = '';
+          champRecherche.value = ''; selectTag.value = '';
+          remplirCartes();
+        },
+      }));
+    }
+  }
 
   function remplirCartes() {
     grille.innerHTML = '';
-    const q = normaliserNom(etat.rechercheRecettes);
-    const recettes = D.recettes.filter(function (r) {
-      if (etat.tagFiltre && r.tags.indexOf(etat.tagFiltre) < 0) return false;
-      if (!q) return true;
-      return normaliserNom(r.nom).indexOf(q) >= 0 || r.tags.some(function (t) { return normaliserNom(t).indexOf(q) >= 0; });
-    }).sort(function (a, b) {
-      const sa = selectionDe(a.id) ? 0 : 1, sb = selectionDe(b.id) ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-      return a.nom.localeCompare(b.nom, 'fr');
-    });
 
     if (!D.recettes.length) {
+      remplirFiltres(0);
       grille.appendChild(el('div', { class: 'rien' }, [
         el('p', { text: 'Aucune recette pour l\'instant.' }),
         el('button', { type: 'button', class: 'btn principal', text: 'Créer ma première recette', onclick: function () { allerA('recettes'); ouvrirEditeurRecette(null); } }),
       ]));
       return;
     }
-    if (!recettes.length) { grille.appendChild(el('div', { class: 'rien', text: 'Aucune recette ne correspond.' })); return; }
 
-    recettes.forEach(function (r) {
+    const trouvees = filtrerRecettes(D, {
+      texte: etat.rechercheRecettes,
+      tag: etat.tagFiltre,
+      tempsMax: etat.filtreTempsMax,
+      fraicheur: etat.filtreFraicheur,
+    }).sort(function (a, b) {
+      const sa = selectionDe(a.recette.id) ? 0 : 1, sb = selectionDe(b.recette.id) ? 0 : 1;
+      if (sa !== sb) return sa - sb;
+      return a.recette.nom.localeCompare(b.recette.nom, 'fr');
+    });
+    remplirFiltres(trouvees.length);
+
+    if (!trouvees.length) {
+      grille.appendChild(el('div', { class: 'rien', text: 'Aucune recette ne correspond à ces critères.' }));
+      return;
+    }
+
+    trouvees.forEach(function (t) {
+      const r = t.recette;
       const sel = selectionDe(r.id);
-      const c = coutRecette(D, r, sel ? sel.portions : r.portionsDefaut);
+      const c = coutRecette(D, r, sel ? sel.portions : D.reglages.portionsBase);
       const fraicheur = texteFraicheur(r.derniereUtilisation);
+
       const meta = el('div', { class: 'meta' });
       if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
-      r.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
+      r.tags.forEach(function (tag) { meta.appendChild(el('span', { class: 'puce', text: tag })); });
       if (afficherPrix() && c.total > 0) {
         meta.appendChild(el('span', { class: 'puce', text: formatEuroFixe(c.parPortion) + ' / portion' }));
       }
       if (fraicheur) meta.appendChild(el('span', { class: 'puce alerte', text: fraicheur }));
+      // On dit pourquoi la recette ressort quand c'est un ingrédient qui a fait mouche.
+      if (t.ingredientsTrouves.length) {
+        meta.appendChild(el('span', { class: 'puce accent', text: 'contient : ' + t.ingredientsTrouves.join(', ') }));
+      }
 
-      const infos = el('div', { class: 'infos' }, [
-        el('div', { class: 'nom', text: r.nom }),
-        meta,
+      const nom = el('button', { type: 'button', class: 'nom' }, [
+        el('span', { text: r.nom }),
+        el('span', { class: 'loupe', 'aria-hidden': 'true', text: '›' }),
       ]);
+      nom.setAttribute('aria-label', 'Voir la fiche de ' + r.nom);
+      nom.addEventListener('click', function () { apercuRecette(r); });
+
       const action = sel
         ? el('div', { style: 'display:flex;flex-direction:column;gap:.3rem;align-items:flex-end' }, [
             el('div', { class: 'stepper' }, [
@@ -1799,10 +1972,10 @@ function vueSemaine() {
           ])
         : el('button', { type: 'button', class: 'btn principal', style: 'min-width:44px', text: '+', 'aria-label': 'Ajouter ' + r.nom + ' à la semaine', onclick: function () { ajouterASemaine(r); } });
 
-      const carte = el('div', { class: 'carte carte-recette' + (sel ? ' selectionnee' : '') }, [infos, action]);
-      carte.querySelector('.nom').addEventListener('click', function () { allerA('recettes'); ouvrirEditeurRecette(r); });
-      carte.querySelector('.nom').style.cursor = 'pointer';
-      grille.appendChild(carte);
+      grille.appendChild(el('div', { class: 'carte carte-recette' + (sel ? ' selectionnee' : '') }, [
+        el('div', { class: 'infos' }, [nom, meta]),
+        action,
+      ]));
     });
   }
 
@@ -1822,12 +1995,11 @@ function vueSemaine() {
       if (r) ul.appendChild(el('li', { text: r.nom + ' — ' + s.portions + ' portions' }));
     });
     recap.appendChild(ul);
-    const infos = el('div', { class: 'barre-actions', style: 'align-items:center;margin-bottom:.5rem' }, [
+    recap.appendChild(el('div', { class: 'barre-actions', style: 'align-items:center;margin-bottom:.5rem' }, [
       el('span', { class: 'puce accent', text: sel.length + ' recette' + (sel.length > 1 ? 's' : '') }),
       el('span', { class: 'puce accent', text: totalPortions + ' portions' }),
       afficherPrix() ? el('span', { class: 'puce accent', text: texteTotal(c.total, c.sansPrix) }) : null,
-    ]);
-    recap.appendChild(infos);
+    ]));
     if (afficherPrix()) {
       const evo = evolutionCout(c.total);
       if (evo) recap.appendChild(el('p', { class: 'tpt doux', text: evo }));
@@ -1840,6 +2012,93 @@ function vueSemaine() {
 
   remplirCartes();
   remplirRecap();
+}
+
+/**
+ * Fiche de lecture rapide, sans quitter la composition de la semaine :
+ * ce qu'il faut acheter pour le nombre de portions retenu, et les notes.
+ */
+function apercuRecette(recette) {
+  const sel = selectionDe(recette.id);
+  const portions = sel ? sel.portions : D.reglages.portionsBase;
+  const corps = el('div', { class: 'apercu-fiche' });
+
+  const meta = el('div', { class: 'barre-actions', style: 'margin-bottom:.5rem' });
+  if (recette.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: recette.tempsPreparationMin + ' min' }));
+  recette.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
+  const c = coutRecette(D, recette, portions);
+  if (afficherPrix() && c.total > 0) {
+    meta.appendChild(el('span', { class: 'puce accent', text: (c.sansPrix ? '≥ ' : '') + formatEuroFixe(c.parPortion) + ' / portion' }));
+  }
+  const fraicheur = texteFraicheur(recette.derniereUtilisation);
+  if (fraicheur) meta.appendChild(el('span', { class: 'puce alerte', text: fraicheur }));
+  else if (!recette.derniereUtilisation) meta.appendChild(el('span', { class: 'puce', text: 'jamais faite' }));
+  corps.appendChild(meta);
+
+  corps.appendChild(el('h3', { style: 'margin:.2rem 0 0', text: 'Pour ' + portions + ' portion' + (portions > 1 ? 's' : '') }));
+  const agr = agregerSelection(D, [{ recetteId: recette.id, portions: portions }]);
+  if (!agr.lignes.length) {
+    corps.appendChild(el('p', { class: 'pt doux', text: 'Aucun ingrédient renseigné.' }));
+  } else {
+    const ordreSaisie = recette.lignes.map(function (l) { return l.ingredientId; });
+    const ul = el('ul');
+    agr.lignes.slice().sort(function (a, b) {
+      return ordreSaisie.indexOf(a.ingredient.id) - ordreSaisie.indexOf(b.ingredient.id);
+    }).forEach(function (l) {
+      const fixe = recette.lignes.some(function (x) { return x.ingredientId === l.ingredient.id && x.fixe; });
+      ul.appendChild(el('li', {
+        text: formatQuantiteBase(l.base, l.ingredient) + ' ' + elision(minusculeInitiale(l.ingredient.nom)) + (fixe ? ' (fixe)' : ''),
+      }));
+    });
+    corps.appendChild(ul);
+  }
+  if (recette.notes && recette.notes.trim()) {
+    corps.appendChild(el('div', { class: 'notes', text: recette.notes }));
+  }
+
+  const actions = [
+    { label: 'Fermer', onClick: function (f) { f(); } },
+    { label: 'Modifier', onClick: function (f) { f(); allerA('recettes'); ouvrirEditeurRecette(recette); } },
+  ];
+  actions.push(sel
+    ? { label: 'Retirer de la semaine', onClick: function (f) { f(); retirerDeSemaine(recette.id); } }
+    : { label: 'Ajouter à la semaine', variant: 'principal', onClick: function (f) { f(); ajouterASemaine(recette); } });
+
+  ouvrirModale({ titre: recette.nom, corps: [corps], actions: actions });
+}
+
+/**
+ * Règle le nombre de portions de base. Il pré-remplit chaque ajout, et
+ * s'applique aussi aux recettes déjà retenues — « ce soir on est six » ne doit
+ * pas se ressaisir recette par recette. Annulable.
+ */
+async function changerPortionsBase(delta) {
+  const avant = D.reglages.portionsBase;
+  const apres = Math.max(1, Math.min(99, avant + delta));
+  if (apres === avant) return;
+  const selAvant = JSON.parse(JSON.stringify(D.semaine.selection));
+  const defautsAvant = D.recettes.map(function (r) { return { id: r.id, p: r.portionsDefaut }; });
+
+  D.reglages.portionsBase = apres;
+  D.semaine.selection.forEach(function (s) {
+    s.portions = apres;
+    const r = recetteParId(s.recetteId);
+    if (r) r.portionsDefaut = apres;
+  });
+  await sauvegarder();
+  rendre();
+  if (selAvant.length) {
+    toast('Semaine passée à ' + apres + ' portions', {
+      duree: 5000, actionLabel: 'Annuler',
+      onAction: async function () {
+        D.reglages.portionsBase = avant;
+        D.semaine.selection = selAvant;
+        defautsAvant.forEach(function (x) { const r = recetteParId(x.id); if (r) r.portionsDefaut = x.p; });
+        await sauvegarder();
+        rendre();
+      },
+    });
+  }
 }
 
 function evolutionCout(coutActuel) {
@@ -1935,13 +2194,14 @@ function chargerSemaineType() {
       el('div', { class: 'tpt doux', text: noms.join(' · ') || 'Vide' }),
       el('div', { class: 'barre-actions', style: 'margin-top:.4rem' }, [
         el('button', {
-          type: 'button', class: 'btn mini principal', text: 'Charger',
-          onclick: async function () {
-            fermerModale();
-            D.semaine.selection = nettoyerSelection(t.selection, new Set(D.recettes.map(function (r) { return r.id; })));
-            D.semaine.coches = {};
-            await sauvegarder(); rendre(); toast('Semaine type chargée.');
-          },
+          type: 'button', class: 'btn mini principal', text: 'Ajouter',
+          title: 'Ajoute ces recettes à la semaine en cours',
+          onclick: function () { fermerModale(); appliquerSemaineType(t, 'ajouter'); },
+        }),
+        el('button', {
+          type: 'button', class: 'btn mini', text: 'Remplacer',
+          title: 'Remplace la sélection en cours par cette semaine type',
+          onclick: function () { fermerModale(); appliquerSemaineType(t, 'remplacer'); },
         }),
         el('button', {
           type: 'button', class: 'btn mini danger', text: 'Supprimer',
@@ -1959,7 +2219,54 @@ function chargerSemaineType() {
     ]));
   });
   corps.push(liste);
-  ouvrirModale({ titre: 'Charger une semaine type', corps: corps, actions: [{ label: 'Fermer', onClick: function (f) { f(); } }] });
+  ouvrirModale({ titre: 'Semaines types', corps: corps, actions: [{ label: 'Fermer', onClick: function (f) { f(); } }] });
+}
+
+/** Applique une semaine type : en complément de la sélection, ou à sa place. */
+async function appliquerSemaineType(type, mode) {
+  const idsConnus = new Set(D.recettes.map(function (r) { return r.id; }));
+  const voulue = nettoyerSelection(type.selection, idsConnus);
+
+  if (mode === 'remplacer') {
+    const avant = D.semaine.selection.slice();
+    const cochesAvant = Object.assign({}, D.semaine.coches);
+    D.semaine.selection = voulue;
+    D.semaine.coches = {};
+    await sauvegarder();
+    rendre();
+    toast('« ' + type.nom +' » a remplacé la sélection', {
+      duree: 5000, actionLabel: 'Annuler',
+      onAction: async function () {
+        D.semaine.selection = avant; D.semaine.coches = cochesAvant;
+        await sauvegarder(); rendre();
+      },
+    });
+    return;
+  }
+
+  // Ajout : les recettes déjà retenues gardent le nombre de portions choisi.
+  const ajoutees = [];
+  let deja = 0;
+  voulue.forEach(function (s) {
+    if (selectionDe(s.recetteId)) { deja += 1; return; }
+    D.semaine.selection.push(s);
+    ajoutees.push(s.recetteId);
+  });
+  if (!ajoutees.length) {
+    toast(deja ? 'Ces recettes sont déjà dans la semaine.' : 'Cette semaine type est vide.');
+    return;
+  }
+  await sauvegarder();
+  rendre();
+  const message = ajoutees.length + (ajoutees.length > 1 ? ' recettes ajoutées' : ' recette ajoutée') +
+    (deja ? ' · ' + deja + ' déjà présente' + (deja > 1 ? 's' : '') : '');
+  toast(message, {
+    duree: 5000, actionLabel: 'Annuler',
+    onAction: async function () {
+      D.semaine.selection = D.semaine.selection.filter(function (s) { return ajoutees.indexOf(s.recetteId) < 0; });
+      await sauvegarder(); rendre();
+    },
+  });
 }
 
 async function reprendreSemaineDerniere() {
@@ -2655,7 +2962,7 @@ function majApercuRecette() {
     return ordreSaisie.indexOf(a.ingredient.id) - ordreSaisie.indexOf(b.ingredient.id);
   }).forEach(function (l) {
     ul.appendChild(el('li', {
-      text: formatQuantiteBase(l.base, l.ingredient) + ' ' + elision(l.ingredient.nom.toLowerCase()) +
+      text: formatQuantiteBase(l.base, l.ingredient) + ' ' + elision(minusculeInitiale(l.ingredient.nom)) +
         (lignesValides.find(function (x) { return x.ingredientId === l.ingredient.id && x.fixe; }) ? ' (fixe)' : ''),
     }));
   });
