@@ -1,0 +1,15 @@
+{
+  "name": "liste-courses",
+  "version": "1.0.0",
+  "description": "Composer sa semaine de repas et en tirer la liste de courses.",
+  "license": "UNLICENSED",
+  "private": true,
+  "type": "commonjs",
+  "main": "serveur/serveur.js",
+  "scripts": {
+    "start": "node serveur/serveur.js --statique . --donnees ./donnees"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

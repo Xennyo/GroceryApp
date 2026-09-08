@@ -13,6 +13,7 @@ additionnées, unités harmonisées, tri par rayon, coût estimé.
 | `sw.js` | Service worker : rend l'application disponible hors ligne. |
 | `icone-*.png` | Icônes d'installation. |
 | `serveur/` | Serveur de synchronisation, facultatif. Voir `serveur/LISEZMOI.md`. |
+| `package.json`, `Dockerfile` | Pour déployer le tout comme un seul service. |
 
 ## Deux façons de s'en servir
 
@@ -49,11 +50,18 @@ c'est ce qui déclenche la mise à jour chez les utilisateurs.
 Facultatif, et sans effet tant qu'aucun serveur n'est configuré : par défaut les
 données ne quittent pas l'appareil.
 
-1. Déployer le serveur (`serveur/LISEZMOI.md`).
-2. Dans Réglages → Partage et synchronisation, renseigner son adresse.
-3. « Créer un espace partagé » : les données affichées y sont déposées et un
-   lien est produit.
+1. Déployer le serveur avec `--statique .` : **un seul service sert
+   l'application et la synchronisation**, ce qui évite toute question de CORS
+   et ne laisse qu'une adresse à partager. Voir `serveur/LISEZMOI.md`.
+2. Ouvrir l'application à cette adresse. Elle **détecte son serveur toute
+   seule** — rien à saisir.
+3. Réglages → « Créer un espace partagé » : les données affichées y sont
+   déposées et un lien est produit.
 4. Transmettre ce lien. En l'ouvrant, l'autre personne rejoint l'espace.
+
+Si l'application est hébergée ailleurs que le serveur (GitHub Pages d'un côté,
+serveur de l'autre), il faut renseigner l'adresse du serveur à la main dans
+Réglages. Tout le reste est identique.
 
 Chaque appareil peut connaître plusieurs espaces et basculer de l'un à l'autre
 par le bouton en haut de l'écran. « Cet appareil » désigne les données locales,

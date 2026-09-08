@@ -4309,6 +4309,28 @@ const ETAT_LIBELLE = {
 };
 
 let infosEspaces = { courant: null, espaces: [], etat: 'local', enAttente: 0 };
+let serveurDetecte = null;   // serveur de synchronisation servant cette page
+
+/**
+ * Quand l'application est servie par le serveur de synchronisation lui-même,
+ * il n'y a rien à saisir : on interroge « /api/sante » sur la même adresse et
+ * on se configure tout seul. C'est le cas de loin le plus courant, et celui
+ * où une adresse tapée à la main serait une source d'erreur inutile.
+ */
+async function detecterServeur() {
+  if (typeof location === 'undefined') return null;
+  if (location.protocol !== 'https:' && location.protocol !== 'http:') return null;
+  try {
+    const stop = new AbortController();
+    const minuteur = setTimeout(function () { stop.abort(); }, 3000);
+    const rep = await fetch(location.origin + '/api/sante', { signal: stop.signal });
+    clearTimeout(minuteur);
+    if (!rep.ok) return null;
+    const r = await rep.json();
+    if (r && r.etat === 'ok') { serveurDetecte = location.origin; return serveurDetecte; }
+  } catch (e) { /* pas de serveur à cette adresse : rien à signaler */ }
+  return null;
+}
 
 async function rafraichirEtatEspaces() {
   infosEspaces = await Store.espaces();
@@ -4466,10 +4488,26 @@ function carteSynchronisation() {
     await sauvegarder();
     await rafraichirEtatEspaces();
   });
-  carte.appendChild(el('label', { class: 'champ' }, [
+  const aide = (serveurDetecte && D.reglages.serveurSync === serveurDetecte)
+    ? 'Détecté automatiquement : cette application est servie par ce serveur.'
+    : 'Adresse de votre serveur. Voir serveur/LISEZMOI.md dans le dépôt.';
+  const bloc = el('label', { class: 'champ' }, [
     el('span', { text: 'Serveur de synchronisation' }), champServeur,
-    el('span', { class: 'tpt doux', text: 'Adresse de votre serveur. Voir serveur/LISEZMOI.md dans le dépôt.' }),
-  ]));
+    el('span', { class: 'tpt doux', text: aide }),
+  ]);
+  carte.appendChild(bloc);
+  if (serveurDetecte && D.reglages.serveurSync !== serveurDetecte) {
+    carte.appendChild(el('button', {
+      type: 'button', class: 'btn mini', style: 'margin-bottom:.6rem',
+      text: 'Utiliser ce serveur (' + serveurDetecte.replace(/^https?:\/\//, '') + ')',
+      onclick: async function () {
+        D.reglages.serveurSync = serveurDetecte;
+        await sauvegarder();
+        rendre();
+        toast('Serveur enregistré.');
+      },
+    }));
+  }
 
   const actions = el('div', { class: 'barre-actions' });
   actions.appendChild(el('button', {
@@ -4614,6 +4652,11 @@ function signalerModeDegrade() {
 }
 
 async function demarrer() {
+  // Le service worker ne dépend ni des données ni du réseau : l'enregistrer en
+  // premier fait démarrer la mise en cache hors ligne sans attendre, et garantit
+  // que l'arrivée d'une nouvelle version sera vue quoi qu'il arrive ensuite.
+  enregistrerServiceWorker();
+
   Store.surPanne(function () { signalerModeDegrade(); });
 
   // Une modification venue d'un autre appareil remplace la racine : on adopte
@@ -4666,6 +4709,17 @@ async function demarrer() {
   // Un lien de partage dans l'adresse : on propose de rejoindre l'espace.
   await traiterLienEntrant();
 
+  // Servie par son propre serveur : on se relie sans rien demander. Après le
+  // premier affichage — une sonde réseau ne doit jamais retarder l'écran.
+  detecterServeur().then(async function () {
+    if (serveurDetecte && !D.reglages.serveurSync) {
+      D.reglages.serveurSync = serveurDetecte;
+      await sauvegarder();
+    }
+    await rafraichirEtatEspaces();
+    if (etat.onglet === 'reglages') rendre();
+  });
+
   // De retour sur l'onglet, on rattrape ce qui s'est passé pendant l'absence.
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'visible') Store.synchroniser();
@@ -4679,8 +4733,6 @@ async function demarrer() {
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') vider();
   });
-
-  enregistrerServiceWorker();
 
   // À l'impression, on déplie les rayons repliés puis on rétablit l'affichage.
   let repliesAvantImpression = [];
