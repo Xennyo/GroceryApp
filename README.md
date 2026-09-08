@@ -74,6 +74,20 @@ de fonctionner et repart tout seul à la reconnexion.
 ⚠️ **Le lien de partage fait office de clé.** Il n'y a pas de comptes : qui l'a
 peut tout voir et tout modifier.
 
+## Planifier
+
+Le bouton calendrier, en haut de l'écran, ouvre le planning : on y place un ou
+plusieurs plats par jour, sur autant de semaines qu'on veut.
+
+**Planifier et acheter sont deux horizons différents.** Prévoir un mois de menus
+ne périme rien. La liste de courses ne couvre donc que la **période d'achat**,
+réglée par défaut sur la semaine en cours et modifiable dans le calendrier. Les
+repas planifiés au-delà restent en attente et n'entrent dans la liste que le jour
+où la période les rattrape.
+
+Au-delà d'une semaine d'achats, l'application nomme les rayons frais concernés :
+c'est là que la péremption devient un vrai sujet.
+
 ## Sauvegarde
 
 Les données vivent dans le navigateur. L'export JSON (onglet Réglages) est la

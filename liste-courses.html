@@ -106,8 +106,26 @@ a{ color:var(--accent); }
   padding:.5rem .75rem; padding-top:calc(.5rem + env(safe-area-inset-top));
   display:flex; align-items:center; gap:.5rem; min-height:44px;
 }
-.topbar .titre{ font-weight:650; font-size:1.05rem; margin:0; flex:1; min-width:0;
+.topbar .titre{ font-weight:650; font-size:1.05rem; margin:0; flex:1 1 auto; min-width:0;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Sur mobile, la barre du bas nomme déjà l'onglet actif : le titre y ferait
+   double emploi et écrase les deux boutons. On le retire de l'affichage sans
+   le retirer du document, pour les lecteurs d'écran. */
+@media (max-width:899px){
+  .topbar .titre{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; flex:0 0 0;
+  }
+  .topbar{ justify-content:space-between; }
+  .bouton-calendrier{ max-width:70%; }
+  .bouton-espace{ max-width:38%; }
+  /* Sans espace partagé, « Cet appareil » est l'état par défaut : la pastille
+     suffit, et la place revient au libellé de période. */
+  .bouton-espace.sans-espace .nom-espace{
+    position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+  }
+  .bouton-espace.sans-espace{ padding:.2rem .5rem; }
+}
 .bouton-espace{
   flex:0 1 auto; min-width:0; display:inline-flex; align-items:center; gap:.35rem;
   background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
@@ -120,6 +138,34 @@ a{ color:var(--accent); }
 .pastille.synchronise{ background:var(--accent); }
 .pastille.envoi{ background:#c98a00; }
 .pastille.horsligne,.pastille.erreur{ background:var(--danger); }
+.calendrier .periode-achat{ background:var(--surface-2); border-radius:var(--r); padding:.5rem .6rem; }
+.calendrier .periode-ligne{ display:flex; align-items:center; gap:.4rem; }
+.calendrier .periode-nom{ flex:1 1 auto; text-align:center; font-weight:650; font-size:1rem; }
+.grille-mois{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
+.grille-mois .entete-jour{ text-align:center; font-size:.7rem; font-weight:700; color:var(--texte-doux);
+  text-transform:uppercase; letter-spacing:.03em; padding:.2rem 0; }
+.case-jour{
+  position:relative; min-height:46px; border:1px solid var(--border); border-radius:8px;
+  background:var(--surface); color:var(--texte); font:inherit; cursor:pointer; padding:.2rem 0 .1rem;
+  display:flex; flex-direction:column; align-items:center; justify-content:flex-start; gap:1px;
+  transition:background-color 120ms ease, border-color 120ms ease;
+}
+.case-jour:hover{ border-color:var(--border-fort); }
+.case-jour .num{ font-size:.85rem; font-weight:600; line-height:1.1; }
+.case-jour .points{ font-size:.7rem; color:var(--accent); line-height:1; letter-spacing:1px; }
+.case-jour.hors-mois{ opacity:.42; }
+.case-jour.dans-periode{ background:var(--accent-doux); border-color:transparent; }
+.case-jour.aujourdhui .num{ text-decoration:underline; text-underline-offset:2px; }
+.case-jour.ouvert{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
+.jour-ouvert{ margin-top:.5rem; }
+.bouton-calendrier{
+  flex:0 0 auto; display:inline-flex; align-items:center; gap:.3rem;
+  background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
+  padding:.2rem .6rem; min-height:36px; cursor:pointer; font:inherit; font-size:.82rem;
+  font-weight:600; color:var(--texte); max-width:58%;
+}
+.bouton-calendrier:hover{ border-color:var(--border-fort); }
+.bouton-calendrier .periode{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ligne-espace{ display:flex; align-items:center; gap:.5rem; padding:.4rem 0; border-top:1px solid var(--border); }
 .ligne-espace:first-child{ border-top:0; }
 .ligne-espace .nom{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
@@ -465,7 +511,10 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
     <div id="bandeau-degrade" hidden role="status"></div>
     <header class="topbar">
       <h1 class="titre" id="titre-page">Semaine</h1>
-      <span id="entete-extra" class="pt doux"></span>
+      <button type="button" class="bouton-calendrier" id="bouton-calendrier" title="Planifier les repas et choisir la période d'achat">
+        <span aria-hidden="true">🗓</span>
+        <span class="periode" id="libelle-periode">Semaine</span>
+      </button>
       <button type="button" class="bouton-espace" id="bouton-espace" hidden>
         <span class="pastille" id="pastille-sync"></span>
         <span class="nom-espace" id="nom-espace">Cet appareil</span>
@@ -490,7 +539,7 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
 
 /* ——— MODÈLE ——————————————————————————————————————————————————————————— */
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 
 const RAYONS = [
   ['fruits_legumes', 'Fruits & légumes'],
@@ -524,6 +573,16 @@ const FAMILLES = [
   ['piece',  'Pièce (pièce, gousse, botte…)'],
 ];
 const FAMILLE_COURT = { masse: 'masse', volume: 'volume', piece: 'pièce' };
+// Saisons météorologiques : elles collent au calendrier des marchés mieux que
+// les saisons astronomiques, et tombent sur des mois entiers.
+const SAISONS = [['printemps', 'Printemps'], ['ete', 'Été'], ['automne', 'Automne'], ['hiver', 'Hiver']];
+const SAISON_LIBELLE = Object.fromEntries(SAISONS);
+const MOIS_COURTS = ['janv.', 'févr.', 'mars', 'avr.', 'mai', 'juin', 'juil.', 'août', 'sept.', 'oct.', 'nov.', 'déc.'];
+const JOURS_COURTS = ['lun', 'mar', 'mer', 'jeu', 'ven', 'sam', 'dim'];
+const JOURS_LONGS = ['lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi', 'dimanche'];
+// Rayons dont le contenu ne se garde pas : ils motivent l'avertissement quand
+// la période d'achat dépasse la semaine.
+const RAYONS_FRAIS = ['fruits_legumes', 'boucherie', 'poissonnerie', 'cremerie', 'charcuterie'];
 // Un plat se sert chaud ou froid. Ça ne se déduit d'aucune autre donnée, et
 // c'est la question qu'on se pose vraiment au moment de composer la semaine.
 const TEMPERATURES = [['chaud', 'Chaud'], ['froid', 'Froid']];
@@ -531,6 +590,72 @@ const TEMPERATURE_LIBELLE = Object.fromEntries(TEMPERATURES);
 const UNITES_PIECE_SUGGEREES = ['pièce', 'gousse', 'botte', 'tranche', 'pincée', 'brin', 'feuille', 'sachet', 'boîte', 'tige'];
 const PAR_PRIX_PAR_FAMILLE = { masse: 'kg', volume: 'L', piece: 'piece' };
 const PAR_PRIX_LIBELLE = { kg: '€/kg', L: '€/L', piece: '€/pièce' };
+
+/** Saison d'une date. → 'printemps' | 'ete' | 'automne' | 'hiver' */
+function saisonDe(date) {
+  const m = (date || new Date()).getMonth();
+  if (m >= 2 && m <= 4) return 'printemps';
+  if (m >= 5 && m <= 7) return 'ete';
+  if (m >= 8 && m <= 10) return 'automne';
+  return 'hiver';
+}
+
+/* --- Dates : tout est manipulé en 'aaaa-mm-jj', jamais en horodatage. --- */
+function isoDuJour(date) {
+  const p = function (n) { return String(n).padStart(2, '0'); };
+  return date.getFullYear() + '-' + p(date.getMonth() + 1) + '-' + p(date.getDate());
+}
+function dateDepuisISO(iso) {
+  const d = new Date(String(iso) + 'T00:00:00');
+  return isNaN(d.getTime()) ? null : d;
+}
+function ajouterJours(date, n) {
+  const d = new Date(date.getTime());
+  d.setDate(d.getDate() + n);
+  return d;
+}
+/** Lundi de la semaine contenant cette date. La semaine française commence lundi. */
+function lundiDe(date) {
+  const d = new Date(date.getTime());
+  d.setHours(0, 0, 0, 0);
+  return ajouterJours(d, -((d.getDay() + 6) % 7));
+}
+function periodeSemaineCourante() {
+  const l = lundiDe(new Date());
+  return { debut: isoDuJour(l), fin: isoDuJour(ajouterJours(l, 6)) };
+}
+/** Toutes les dates d'une période, bornes comprises. */
+function joursDeLaPeriode(periode) {
+  const d = dateDepuisISO(periode.debut), f = dateDepuisISO(periode.fin);
+  if (!d || !f || f < d) return [];
+  const sortie = [];
+  for (let c = d; c <= f && sortie.length < 400; c = ajouterJours(c, 1)) sortie.push(isoDuJour(c));
+  return sortie;
+}
+function nbJoursPeriode(periode) { return joursDeLaPeriode(periode).length; }
+function dansLaPeriode(iso, periode) {
+  return !!iso && iso >= periode.debut && iso <= periode.fin;
+}
+function libelleDePeriode(periode) {
+  const d = dateDepuisISO(periode.debut), f = dateDepuisISO(periode.fin);
+  if (!d || !f) return 'Période';
+  const n = nbJoursPeriode(periode);
+  if (n === 7 && d.getDay() === 1) return 'Semaine du ' + d.getDate() + ' ' + MOIS[d.getMonth()];
+  if (periode.debut === periode.fin) return d.getDate() + ' ' + MOIS[d.getMonth()];
+  if (d.getMonth() === f.getMonth()) return 'Du ' + d.getDate() + ' au ' + f.getDate() + ' ' + MOIS[f.getMonth()];
+  return 'Du ' + d.getDate() + ' ' + MOIS[d.getMonth()] + ' au ' + f.getDate() + ' ' + MOIS[f.getMonth()];
+}
+
+/** Version abrégée, pour la barre de titre d'un téléphone. */
+function libelleDePeriodeCourt(periode) {
+  const d = dateDepuisISO(periode.debut), f = dateDepuisISO(periode.fin);
+  if (!d || !f) return 'Période';
+  const n = nbJoursPeriode(periode);
+  if (n === 7 && d.getDay() === 1) return 'Sem. du ' + d.getDate() + ' ' + MOIS_COURTS[d.getMonth()];
+  if (periode.debut === periode.fin) return d.getDate() + ' ' + MOIS_COURTS[d.getMonth()];
+  if (d.getMonth() === f.getMonth()) return d.getDate() + '–' + f.getDate() + ' ' + MOIS_COURTS[f.getMonth()];
+  return d.getDate() + ' ' + MOIS_COURTS[d.getMonth()] + ' – ' + f.getDate() + ' ' + MOIS_COURTS[f.getMonth()];
+}
 
 function aujourdHuiISO() {
   const d = new Date();
@@ -558,6 +683,7 @@ function donneesVides() {
     recettes: [],
     semaine: {
       libelle: libelleSemaineCourante(),
+      periode: periodeSemaineCourante(),
       selection: [],
       coches: {},
       ajoutsManuels: [],
@@ -621,7 +747,7 @@ function donneesExemple() {
   d.recettes = [
     {
       id: 'rec_chili', nom: 'Chili sin carne', tags: ['végétarien', 'rapide'],
-      tempsPreparationMin: 35, temperature: 'chaud', portionsDefaut: 4, derniereUtilisation: null,
+      tempsPreparationMin: 35, temperature: 'chaud', saisons: [], portionsDefaut: 4, derniereUtilisation: null,
       notes: "Faire revenir l'oignon et le poivron, ajouter les épices, les tomates puis les haricots. Mijoter 25 min. Servir avec le riz.",
       lignes: [
         { ingredientId: 'ing_tomate_concassee', quantite: 0.2, unite: 'kg', fixe: false },
@@ -635,7 +761,7 @@ function donneesExemple() {
     },
     {
       id: 'rec_ratatouille', nom: 'Ratatouille', tags: ['végétarien'],
-      tempsPreparationMin: 50, temperature: 'chaud', portionsDefaut: 4, derniereUtilisation: null,
+      tempsPreparationMin: 50, temperature: 'chaud', saisons: [], portionsDefaut: 4, derniereUtilisation: null,
       notes: 'Couper les légumes en cubes réguliers, les cuire séparément puis les réunir 10 min.',
       lignes: [
         { ingredientId: 'ing_tomate_concassee', quantite: 150, unite: 'g', fixe: false },
@@ -650,7 +776,7 @@ function donneesExemple() {
     },
     {
       id: 'rec_pates_pesto', nom: 'Pâtes au pesto', tags: ['rapide', 'végétarien'],
-      tempsPreparationMin: 15, temperature: 'chaud', portionsDefaut: 2, derniereUtilisation: null,
+      tempsPreparationMin: 15, temperature: 'chaud', saisons: [], portionsDefaut: 2, derniereUtilisation: null,
       notes: 'Cuire les pâtes, détendre le pesto avec un peu d\'eau de cuisson, mélanger hors du feu.',
       lignes: [
         { ingredientId: 'ing_pates', quantite: 100, unite: 'g', fixe: false },
@@ -661,7 +787,9 @@ function donneesExemple() {
       ],
     },
   ];
-  return d;
+  // Le jeu d'exemple passe par la normalisation comme n'importe quel document :
+  // un champ ajouté au modèle ne peut plus lui manquer par oubli.
+  return normaliserRacine(d);
 }
 
 /* --- Normalisation défensive : toute racine chargée passe par ici --- */
@@ -697,6 +825,8 @@ function normaliserRacine(d) {
       tags: Array.isArray(r && r.tags) ? r.tags.map(String) : [],
       tempsPreparationMin: (typeof (r && r.tempsPreparationMin) === 'number') ? r.tempsPreparationMin : null,
       temperature: (r && TEMPERATURE_LIBELLE[r.temperature]) ? r.temperature : null,
+      // Vide = de toute l'année. C'est le cas le plus fréquent, et le défaut.
+      saisons: Array.isArray(r && r.saisons) ? r.saisons.filter(function (x) { return SAISON_LIBELLE[x]; }) : [],
       portionsDefaut: (typeof (r && r.portionsDefaut) === 'number' && r.portionsDefaut > 0) ? r.portionsDefaut : 4,
       derniereUtilisation: (r && r.derniereUtilisation) || null,
       notes: String((r && r.notes) || ''),
@@ -717,6 +847,7 @@ function normaliserRacine(d) {
   const s = (d.semaine && typeof d.semaine === 'object') ? d.semaine : {};
   out.semaine = {
     libelle: String(s.libelle || libelleSemaineCourante()),
+    periode: periodeValide(s.periode),
     selection: nettoyerSelection(s.selection, idsRec),
     coches: (s.coches && typeof s.coches === 'object') ? Object.assign({}, s.coches) : {},
     ajoutsManuels: (Array.isArray(s.ajoutsManuels) ? s.ajoutsManuels : []).map(function (a, n) {
@@ -761,19 +892,53 @@ function normaliserRacine(d) {
   return out;
 }
 
+/**
+ * Entrées de planning. Une même recette peut revenir plusieurs fois — lundi et
+ * jeudi — donc chaque entrée porte son propre identifiant, et non celui de la
+ * recette. `date` à null signifie « dans la période, sans jour précis ».
+ */
 function nettoyerSelection(sel, idsRec) {
   const vus = new Set();
   return (Array.isArray(sel) ? sel : []).filter(function (s) {
-    if (!s || !s.recetteId) return false;
-    if (idsRec && !idsRec.has(s.recetteId)) return false;
-    if (vus.has(s.recetteId)) return false;
-    vus.add(s.recetteId); return true;
-  }).map(function (s) {
+    return s && s.recetteId && (!idsRec || idsRec.has(s.recetteId));
+  }).map(function (s, n) {
+    let id = s.id ? String(s.id) : ('pl_' + suffixeCourt() + n);
+    while (vus.has(id)) id = 'pl_' + suffixeCourt() + Math.random().toString(36).slice(2, 5);
+    vus.add(id);
+    const date = (typeof s.date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s.date)) ? s.date : null;
     return {
+      id: id,
       recetteId: s.recetteId,
       portions: (typeof s.portions === 'number' && s.portions > 0) ? Math.min(99, Math.round(s.portions)) : 4,
+      date: date,
     };
   });
+}
+
+function periodeValide(p) {
+  const d = p && typeof p.debut === 'string' && dateDepuisISO(p.debut);
+  const f = p && typeof p.fin === 'string' && dateDepuisISO(p.fin);
+  if (!d || !f || p.fin < p.debut) return periodeSemaineCourante();
+  return { debut: p.debut, fin: p.fin };
+}
+
+/**
+ * Version 1 → 2 : la semaine devient une période datée, et chaque recette
+ * retenue devient une entrée de planning à part entière, avec son identifiant
+ * et éventuellement un jour. Les données existantes deviennent des entrées
+ * sans jour dans la semaine en cours — rien n'est perdu, rien ne bouge.
+ */
+function migrer1vers2(d) {
+  const s = (d.semaine && typeof d.semaine === 'object') ? d.semaine : {};
+  s.periode = periodeSemaineCourante();
+  s.selection = (Array.isArray(s.selection) ? s.selection : []).map(function (e, n) {
+    return { id: 'pl_' + suffixeCourt() + n, recetteId: e.recetteId, portions: e.portions, date: null };
+  });
+  d.semaine = s;
+  (Array.isArray(d.recettes) ? d.recettes : []).forEach(function (r) {
+    if (!Array.isArray(r.saisons)) r.saisons = [];
+  });
+  return d;
 }
 
 // Prévue dès la V1 même si elle ne fait rien : contrôle de schemaVersion au chargement.
@@ -782,7 +947,7 @@ function migrate(donnees) {
   let d = donnees;
   let v = (typeof d.schemaVersion === 'number') ? d.schemaVersion : 1;
   while (v < SCHEMA_VERSION) {
-    // switch (v) { case 1: d = migrer1vers2(d); break; }
+    if (v === 1) d = migrer1vers2(d);
     v += 1;
   }
   if (v > SCHEMA_VERSION) throw new Error('Fichier créé par une version plus récente de l\'application (schéma ' + v + ').');
@@ -1429,7 +1594,7 @@ function coutRecette(donnees, recette, portions) {
  * section placard à part, et tous les totaux.
  */
 function construireListe(donnees) {
-  const agr = agregerSelection(donnees, donnees.semaine.selection);
+  const agr = agregerSelection(donnees, selectionActive(donnees));
   const coches = donnees.semaine.coches || {};
   const articles = [];   // hors placard
   const placard = [];
@@ -1558,6 +1723,7 @@ function ingredientsCorrespondants(recette, texte, parIngredient) {
  * criteres = { texte, tag, tempsMax, temperature }
  *   tempsMax    : minutes, 0 = pas de limite
  *   temperature : '' | 'chaud' | 'froid'
+ *   saison      : '' | 'printemps' | 'ete' | 'automne' | 'hiver'
  * → [{ recette, ingredientsTrouves:[] }] — ingredientsTrouves n'est rempli que
  *   lorsque c'est un ingrédient, et non le nom ou un tag, qui a fait mouche.
  */
@@ -1583,6 +1749,10 @@ function filtrerRecettes(donnees, criteres) {
     // pour cette raison, afin qu'on sache qu'il reste des fiches à renseigner.
     if (c.temperature && r.temperature !== c.temperature) continue;
 
+    // Une recette qui ne déclare aucune saison passe toujours : elle est de
+    // toute l'année, ce n'est pas une information manquante.
+    if (c.saison && !estDeSaison(r, c.saison)) continue;
+
     let ingredientsTrouves = [];
     if (q) {
       const parNom = normaliserNom(r.nom).indexOf(q) >= 0;
@@ -1606,13 +1776,50 @@ function ingredientsInutilises(donnees) {
 }
 
 /**
+ * Entrées de planning couvertes par la période d'achat : celles datées dans la
+ * période, et celles sans jour précis. Planifier loin ne fait donc rien acheter
+ * d'avance — c'est la période qui décide, pas le planning.
+ */
+function selectionActive(donnees) {
+  const p = donnees.semaine.periode;
+  return donnees.semaine.selection.filter(function (e) {
+    // Absence de jour sous toutes ses formes : null, undefined, chaîne vide.
+    return !e.date || dansLaPeriode(e.date, p);
+  });
+}
+
+/** Entrées planifiées un jour donné. */
+function selectionDuJour(donnees, iso) {
+  return donnees.semaine.selection.filter(function (e) { return e.date === iso; });
+}
+
+/**
+ * Rayons frais présents dans la liste. Sert à prévenir quand la période
+ * dépasse la semaine : ce n'est pas le planning qui périme, c'est l'achat.
+ */
+function rayonsFraisDeLaListe(donnees) {
+  const parIng = indexIngredients(donnees);
+  const trouves = new Set();
+  agregerSelection(donnees, selectionActive(donnees)).lignes.forEach(function (l) {
+    const ing = parIng.get(l.ingredient.id) || l.ingredient;
+    if (!ing.placard && RAYONS_FRAIS.indexOf(ing.rayon) >= 0) trouves.add(ing.rayon);
+  });
+  return Array.from(trouves);
+}
+
+/** Une recette est de saison si elle ne déclare rien, ou si elle déclare celle-ci. */
+function estDeSaison(recette, saison) {
+  return !recette.saisons.length || recette.saisons.indexOf(saison) >= 0;
+}
+
+/**
  * Cases à cocher débarrassées de celles qui ne correspondent plus à un article
  * de la liste. Sans ça, retirer une recette puis la remettre ferait réapparaître
  * ses ingrédients déjà cochés — et on ne les achèterait pas.
  */
 function cochesNettoyees(donnees) {
   const valides = new Set();
-  agregerSelection(donnees, donnees.semaine.selection).lignes.forEach(function (l) {
+  agregerSelection(donnees, selectionActive(donnees)).lignes.forEach(function (l) {
     valides.add(l.ingredient.id);
   });
   (donnees.semaine.ajoutsManuels || []).forEach(function (m) { valides.add(m.id); });
@@ -1650,6 +1857,40 @@ function recettesNonClassees(donnees, criteres) {
   return filtrerRecettes(donnees, sansTemperature)
     .filter(function (x) { return !x.recette.temperature; })
     .map(function (x) { return x.recette; });
+}
+
+/**
+ * Ordonne le catalogue. Les recettes sans prix connu finissent toujours en
+ * dernier : les classer à zéro les ferait passer pour les moins chères.
+ */
+function trierRecettes(donnees, resultats, tri, portionsBase) {
+  const cout = new Map();
+  const coutDe = function (r) {
+    if (!cout.has(r.id)) {
+      // Sur la même base que le prix affiché sur la carte, sinon l'ordre
+      // contredirait les prix qu'on a sous les yeux. Une base commune rend
+      // aussi la comparaison honnête entre recettes.
+      const c = coutRecette(donnees, r, portionsBase || 4);
+      cout.set(r.id, c.total > 0 ? c.parPortion : null);
+    }
+    return cout.get(r.id);
+  };
+  const parNom = function (a, b) { return a.recette.nom.localeCompare(b.recette.nom, 'fr'); };
+  const liste = resultats.slice();
+  if (tri === 'prix' || tri === 'prix-desc') {
+    const sens = tri === 'prix' ? 1 : -1;
+    liste.sort(function (a, b) {
+      const x = coutDe(a.recette), y = coutDe(b.recette);
+      if (x === null && y === null) return parNom(a, b);
+      if (x === null) return 1;
+      if (y === null) return -1;
+      if (x !== y) return (x - y) * sens;
+      return parNom(a, b);
+    });
+  } else {
+    liste.sort(parNom);
+  }
+  return liste;
 }
 
 /** Jours écoulés depuis une date ISO (aaaa-mm-jj). null si absente. */
@@ -1698,7 +1939,7 @@ const COLLECTIONS_CLEF = {
   'ingredients': 'id',
   'recettes': 'id',
   'semainesTypes': 'id',
-  'semaine.selection': 'recetteId',
+  'semaine.selection': 'id',
   'semaine.ajoutsManuels': 'id',
 };
 
@@ -1709,6 +1950,8 @@ const VALEURS_OPAQUES = [
   'reglages.ordreRayons',
   'recettes.*.tags',
   'recettes.*.lignes',
+  'recettes.*.saisons',
+  'semainesTypes.*.selection',
   'ingredients.*.aliases',
   'ingredients.*.prix',
 ];
@@ -1938,13 +2181,13 @@ function ouvrirModale(cfg) {
   if (cfg.titre) boite.appendChild(el('h2', { text: cfg.titre }));
   (cfg.corps || []).forEach(function (c) { boite.appendChild(c); });
   const actions = el('div', { class: 'actions' });
-  (cfg.actions || []).forEach(function (a) {
+  (cfg.actions || []).filter(Boolean).forEach(function (a) {
     actions.appendChild(el('button', {
       type: 'button', class: 'btn ' + (a.variant || ''), text: a.label,
       onclick: function () { a.onClick ? a.onClick(fermerModale) : fermerModale(); },
     }));
   });
-  if ((cfg.actions || []).length) boite.appendChild(actions);
+  if ((cfg.actions || []).filter(Boolean).length) boite.appendChild(actions);
   const fond = el('div', { class: 'fond-modal' }, [boite]);
   fond.addEventListener('mousedown', function (ev) { if (ev.target === fond && cfg.fermetureExterieure !== false) fermerModale(); });
   // Tant que la fenêtre est ouverte, la tabulation tourne en boucle dedans.
@@ -2123,6 +2366,8 @@ const etat = {
   tagFiltre: '',
   filtreTempsMax: 0,               // minutes, 0 = pas de limite
   filtreTemperature: '',           // '' | 'chaud' | 'froid'
+  filtreSaison: '',                // '' | saison courante
+  triRecettes: 'nom',              // nom | prix | prix-desc
   baseSaisie: 1,                   // portions dans lesquelles on saisit une recette
   rechercheIngredients: '',
   triRef: { colonne: 'nom', sens: 1 },
@@ -2182,11 +2427,24 @@ function allerA(onglet) {
 function rendre() {
   if (!D) return;
   appliquerTheme();
-  $('#entete-extra').textContent = (etat.onglet === 'semaine' || etat.onglet === 'liste') ? D.semaine.libelle : '';
+  const btnCal = $('#bouton-calendrier');
+  btnCal.hidden = (etat.onglet !== 'semaine' && etat.onglet !== 'liste');
+  majLibellePeriode();
   if (etat.onglet === 'semaine') vueSemaine();
   else if (etat.onglet === 'liste') vueListe();
   else if (etat.onglet === 'recettes') vueRecettes();
   else if (etat.onglet === 'reglages') vueReglages();
+}
+
+/** La barre de titre d'un téléphone n'a pas la place du libellé complet. */
+function majLibellePeriode() {
+  if (!D) return;
+  const court = window.innerWidth < 640;
+  $('#libelle-periode').textContent = court
+    ? libelleDePeriodeCourt(D.semaine.periode)
+    : libelleDePeriode(D.semaine.periode);
+  $('#bouton-calendrier').setAttribute('aria-label',
+    'Planifier — liste de courses pour ' + libelleDePeriode(D.semaine.periode));
 }
 
 /* ——— INGRÉDIENTS : création, rapprochement, fusion (§4.3) ——————————————— */
@@ -2380,30 +2638,62 @@ async function fusionnerIngredients(sourceId, cibleId) {
 
 /* --- 5.1 Semaine (écran d'accueil) --- */
 
-function selectionDe(recetteId) {
-  return D.semaine.selection.find(function (s) { return s.recetteId === recetteId; }) || null;
+/** Entrées de planning d'une recette, dans la période d'achat en cours. */
+function entreesDe(recetteId) {
+  return selectionActive(D).filter(function (s) { return s.recetteId === recetteId; });
 }
-async function ajouterASemaine(recette) {
-  if (selectionDe(recette.id)) return;
+function selectionDe(recetteId) {
+  return entreesDe(recetteId)[0] || null;
+}
+function nouvelleEntree(recetteId, portions, date) {
+  return {
+    id: 'pl_' + slug(recetteId).slice(0, 12) + '_' + suffixeCourt(),
+    recetteId: recetteId,
+    portions: portions,
+    date: date || null,
+  };
+}
+async function ajouterASemaine(recette, date) {
   // Le nombre de portions de base sert de valeur de départ : on le règle une
   // fois en haut de l'écran au lieu de le ressaisir recette par recette.
   const portions = D.reglages.portionsBase || 4;
-  D.semaine.selection.push({ recetteId: recette.id, portions: portions });
+  if (date === undefined && entreesDe(recette.id).length) return;   // depuis une carte : une fois suffit
+  D.semaine.selection.push(nouvelleEntree(recette.id, portions, date || null));
   recette.portionsDefaut = portions;
   await sauvegarder();
   rendre();
 }
 async function retirerDeSemaine(recetteId) {
-  D.semaine.selection = D.semaine.selection.filter(function (s) { return s.recetteId !== recetteId; });
+  const cibles = new Set(entreesDe(recetteId).map(function (e) { return e.id; }));
+  D.semaine.selection = D.semaine.selection.filter(function (s) { return !cibles.has(s.id); });
+  await sauvegarder();
+  rendre();
+}
+async function retirerEntree(entreeId) {
+  D.semaine.selection = D.semaine.selection.filter(function (s) { return s.id !== entreeId; });
   await sauvegarder();
   rendre();
 }
 async function changerPortions(recetteId, delta) {
-  const sel = selectionDe(recetteId);
-  if (!sel) return;
-  sel.portions = Math.max(1, Math.min(99, sel.portions + delta));
+  const entrees = entreesDe(recetteId);
+  if (!entrees.length) return;
+  entrees.forEach(function (e) { e.portions = Math.max(1, Math.min(99, e.portions + delta)); });
   const rec = recetteParId(recetteId);
-  if (rec) rec.portionsDefaut = sel.portions;   // mémorisé pour les prochaines fois
+  if (rec) rec.portionsDefaut = entrees[0].portions;   // mémorisé pour les prochaines fois
+  await sauvegarder();
+  rendre();
+}
+async function changerPortionsEntree(entreeId, delta) {
+  const e = D.semaine.selection.find(function (x) { return x.id === entreeId; });
+  if (!e) return;
+  e.portions = Math.max(1, Math.min(99, e.portions + delta));
+  await sauvegarder();
+  rendre();
+}
+/** Change la période couverte par la liste de courses. */
+async function definirPeriode(periode) {
+  D.semaine.periode = periodeValide(periode);
+  D.semaine.libelle = libelleDePeriode(D.semaine.periode);
   await sauvegarder();
   rendre();
 }
@@ -2435,13 +2725,19 @@ function vueSemaine() {
   ]));
 
   // Recherche : nom, tag ou ingrédient.
-  const champRecherche = el('input', { type: 'search', placeholder: 'Nom, tag ou ingrédient…', value: etat.rechercheRecettes, 'aria-label': 'Rechercher une recette par nom, tag ou ingrédient' });
+  const champRecherche = el('input', { type: 'search', placeholder: 'Nom, tag ou ingrédient…', value: etat.rechercheRecettes, enterkeyhint: 'search', 'aria-label': 'Rechercher une recette par nom, tag ou ingrédient' });
   champRecherche.addEventListener('input', function () { etat.rechercheRecettes = champRecherche.value; remplirCartes(); });
-  const selectTag = el('select', { 'aria-label': 'Filtrer par tag', style: 'flex:0 1 170px' });
+  const selectTag = el('select', { 'aria-label': 'Filtrer par tag', style: 'flex:0 1 150px' });
   selectTag.appendChild(el('option', { value: '', text: 'Tous les tags' }));
   tousLesTags().forEach(function (t) { selectTag.appendChild(el('option', { value: t, text: t, selected: etat.tagFiltre === t })); });
   selectTag.addEventListener('change', function () { etat.tagFiltre = selectTag.value; remplirCartes(); });
-  v.appendChild(el('div', { class: 'recherche' }, [champRecherche, selectTag]));
+
+  const selectTri = el('select', { 'aria-label': 'Trier les recettes', style: 'flex:0 1 170px' });
+  [['nom', 'Ordre alphabétique'], ['prix', 'Prix / portion ↑'], ['prix-desc', 'Prix / portion ↓']]
+    .forEach(function (t) { selectTri.appendChild(el('option', { value: t[0], text: t[1], selected: etat.triRecettes === t[0] })); });
+  selectTri.addEventListener('change', function () { etat.triRecettes = selectTri.value; remplirCartes(); });
+
+  v.appendChild(el('div', { class: 'recherche' }, [champRecherche, selectTag, selectTri]));
 
   // Filtres : les questions qu'on se pose vraiment au moment de composer.
   const zoneFiltres = el('div', { class: 'filtres' });
@@ -2481,14 +2777,23 @@ function vueSemaine() {
         remplirCartes();
       }));
     });
-    const filtre = etat.filtreTempsMax || etat.filtreTemperature || etat.tagFiltre || etat.rechercheRecettes.trim();
+    zoneFiltres.appendChild(el('span', { class: 'separateur', 'aria-hidden': 'true' }));
+    const saisonDuJour = saisonDe(new Date());
+    zoneFiltres.appendChild(bascule('De saison · ' + SAISON_LIBELLE[saisonDuJour].toLowerCase(),
+      etat.filtreSaison === saisonDuJour, function () {
+        etat.filtreSaison = etat.filtreSaison ? '' : saisonDuJour;
+        remplirCartes();
+      }));
+    const filtre = etat.filtreTempsMax || etat.filtreTemperature || etat.filtreSaison ||
+      etat.tagFiltre || etat.rechercheRecettes.trim();
     if (filtre) {
       zoneFiltres.appendChild(el('span', { class: 'tpt doux', style: 'margin-left:.2rem',
         text: nbTrouvees + ' recette' + (nbTrouvees > 1 ? 's' : '') + ' sur ' + D.recettes.length }));
       zoneFiltres.appendChild(el('button', {
         type: 'button', class: 'btn mini fantome', text: 'Tout afficher',
         onclick: function () {
-          etat.filtreTempsMax = 0; etat.filtreTemperature = ''; etat.tagFiltre = ''; etat.rechercheRecettes = '';
+          etat.filtreTempsMax = 0; etat.filtreTemperature = ''; etat.filtreSaison = '';
+          etat.tagFiltre = ''; etat.rechercheRecettes = '';
           champRecherche.value = ''; selectTag.value = '';
           remplirCartes();
         },
@@ -2513,12 +2818,14 @@ function vueSemaine() {
       tag: etat.tagFiltre,
       tempsMax: etat.filtreTempsMax,
       temperature: etat.filtreTemperature,
+      saison: etat.filtreSaison,
     };
-    const trouvees = filtrerRecettes(D, criteres).sort(function (a, b) {
-      const sa = selectionDe(a.recette.id) ? 0 : 1, sb = selectionDe(b.recette.id) ? 0 : 1;
-      if (sa !== sb) return sa - sb;
-      return a.recette.nom.localeCompare(b.recette.nom, 'fr');
-    });
+    // Les recettes retenues restent en tête, quel que soit le tri demandé.
+    const trouvees = trierRecettes(D, filtrerRecettes(D, criteres), etat.triRecettes, D.reglages.portionsBase)
+      .sort(function (a, b) {
+        const sa = selectionDe(a.recette.id) ? 0 : 1, sb = selectionDe(b.recette.id) ? 0 : 1;
+        return sa - sb;
+      });
     remplirFiltres(trouvees.length);
 
     const nonClassees = recettesNonClassees(D, criteres);
@@ -2545,12 +2852,22 @@ function vueSemaine() {
       const faits = [];
       if (r.tempsPreparationMin) faits.push(r.tempsPreparationMin + ' min');
       if (r.temperature) faits.push(TEMPERATURE_LIBELLE[r.temperature]);
+      if (r.saisons.length && r.saisons.length < 4) {
+        faits.push(r.saisons.map(function (x) { return SAISON_LIBELLE[x].toLowerCase(); }).join('/'));
+      }
       if (r.tags.length) faits.push(r.tags.join(', '));
       if (afficherPrix() && c.total > 0) faits.push(formatEuroFixe(c.parPortion) + ' / portion');
       const meta = el('div', { class: 'meta' }, [
         faits.length ? el('span', { class: 'faits', text: faits.join(' · ') }) : null,
       ]);
       if (fraicheur) meta.appendChild(el('span', { class: 'puce alerte', text: fraicheur }));
+      // Une même recette peut être planifiée plusieurs fois dans la période.
+      const entrees = entreesDe(r.id);
+      if (entrees.length > 1) {
+        const jours = entrees.filter(function (e) { return e.date; }).length;
+        meta.appendChild(el('span', { class: 'puce accent',
+          text: entrees.length + ' repas' + (jours ? ' · ' + jours + ' daté' + (jours > 1 ? 's' : '') : '') }));
+      }
       // On dit pourquoi la recette ressort quand c'est un ingrédient qui a fait mouche.
       if (t.ingredientsTrouves.length) {
         meta.appendChild(el('span', { class: 'puce accent', text: 'contient : ' + t.ingredientsTrouves.join(', ') }));
@@ -2563,7 +2880,15 @@ function vueSemaine() {
       nom.setAttribute('aria-label', 'Voir la fiche de ' + r.nom);
       nom.addEventListener('click', function () { apercuRecette(r); });
 
-      const action = sel
+      const action = (sel && entrees.length > 1)
+        ? el('div', { class: 'actions-carte' }, [
+            el('button', { type: 'button', class: 'btn mini', text: 'Planning',
+              title: 'Cette recette revient plusieurs fois : ajustez-la dans le calendrier',
+              onclick: function () { ouvrirCalendrier(entrees.find(function (e) { return e.date; }) ? entrees.find(function (e) { return e.date; }).date : null); } }),
+            el('button', { type: 'button', class: 'btn mini fantome retirer', text: '✕',
+              'aria-label': 'Retirer tous les repas de ' + r.nom, onclick: function () { retirerDeSemaine(r.id); } }),
+          ])
+        : sel
         ? el('div', { class: 'actions-carte' }, [
             el('div', { class: 'stepper compact' }, [
               el('button', { type: 'button', text: '−', 'aria-label': 'Moins de portions pour ' + r.nom, onclick: function () { changerPortions(r.id, -1); } }),
@@ -2585,7 +2910,7 @@ function vueSemaine() {
 
   function remplirRecap() {
     recap.innerHTML = '';
-    const sel = D.semaine.selection;
+    const sel = selectionActive(D);
 
     if (!sel.length) {
       recap.appendChild(el('p', { class: 'doux', style: 'margin:.3rem 0', text: 'Ma semaine est vide — ajoutez des recettes avec « + ».' }));
@@ -2597,8 +2922,12 @@ function vueSemaine() {
 
     // Une ligne suffit à savoir où on en est ; le détail se déplie à la demande,
     // et « Générer la liste » reste atteignable dans les deux états.
+    // On compte des repas, pas des recettes : la même peut revenir deux fois
+    // dans la période.
+    const distinctes = new Set(sel.map(function (e) { return e.recetteId; })).size;
     const resume = el('span', { class: 'resume' }, [
-      el('span', { text: sel.length + ' recette' + (sel.length > 1 ? 's' : '') + ' · ' + totalPortions + ' portions' }),
+      el('span', { text: sel.length + ' repas' + (distinctes !== sel.length ? ' (' + distinctes + ' recettes)' : '') +
+        ' · ' + totalPortions + ' portions' }),
     ]);
     if (afficherPrix()) {
       resume.appendChild(el('span', { text: ' · ' }));
@@ -2607,10 +2936,17 @@ function vueSemaine() {
 
     const detail = el('div', { class: 'detail', id: 'detail-semaine', hidden: !etat.recapOuvert });
     const ul = el('ul');
-    sel.forEach(function (s) {
-      const r = recetteParId(s.recetteId);
-      if (r) ul.appendChild(el('li', { text: r.nom + ' — ' + s.portions + ' portions' }));
-    });
+    sel.slice().sort(function (a, b) { return String(a.date || '9').localeCompare(String(b.date || '9')); })
+      .forEach(function (s) {
+        const r = recetteParId(s.recetteId);
+        if (!r) return;
+        let quand = '';
+        if (s.date) {
+          const j = dateDepuisISO(s.date);
+          if (j) quand = JOURS_LONGS[(j.getDay() + 6) % 7] + ' ' + j.getDate() + ' — ';
+        }
+        ul.appendChild(el('li', { text: quand + r.nom + ' — ' + s.portions + ' portions' }));
+      });
     detail.appendChild(ul);
     if (afficherPrix()) {
       const evo = evolutionCout(c.total);
@@ -2707,7 +3043,7 @@ async function changerPortionsBase(delta) {
   const defautsAvant = D.recettes.map(function (r) { return { id: r.id, p: r.portionsDefaut }; });
 
   D.reglages.portionsBase = apres;
-  D.semaine.selection.forEach(function (s) {
+  selectionActive(D).forEach(function (s) {
     s.portions = apres;
     const r = recetteParId(s.recetteId);
     if (r) r.portionsDefaut = apres;
@@ -2756,7 +3092,7 @@ async function viderSemaine() {
   const ancienneUtilisation = D.recettes.map(function (r) { return { id: r.id, d: r.derniereUtilisation }; });
 
   if (D.semaine.selection.length) {
-    const c = coutSelection(D, D.semaine.selection);
+    const c = coutSelection(D, selectionActive(D));
     D.historique.unshift({
       date: aujourdHuiISO(), libelle: D.semaine.libelle,
       selection: D.semaine.selection.slice(), coutEstime: c.total,
@@ -2876,8 +3212,9 @@ async function appliquerSemaineType(type, mode) {
   let deja = 0;
   voulue.forEach(function (s) {
     if (selectionDe(s.recetteId)) { deja += 1; return; }
-    D.semaine.selection.push(s);
-    ajoutees.push(s.recetteId);
+    const entree = nouvelleEntree(s.recetteId, s.portions, null);
+    D.semaine.selection.push(entree);
+    ajoutees.push(entree.id);
   });
   if (!ajoutees.length) {
     toast(deja ? 'Ces recettes sont déjà dans la semaine.' : 'Cette semaine type est vide.');
@@ -2890,7 +3227,7 @@ async function appliquerSemaineType(type, mode) {
   toast(message, {
     duree: 5000, actionLabel: 'Annuler',
     onAction: async function () {
-      D.semaine.selection = D.semaine.selection.filter(function (s) { return ajoutees.indexOf(s.recetteId) < 0; });
+      D.semaine.selection = D.semaine.selection.filter(function (s) { return ajoutees.indexOf(s.id) < 0; });
       await sauvegarder(); rendre();
     },
   });
@@ -2958,6 +3295,11 @@ function vueListe() {
   // En-tête collant
   const entete = el('div', { class: 'entete-liste' });
   entete.appendChild(el('span', { text: t.nbCoches + ' / ' + t.nbArticles + ' article' + (t.nbArticles > 1 ? 's' : '') }));
+  entete.appendChild(el('button', {
+    type: 'button', class: 'puce puce-bouton', text: '🗓 ' + libelleDePeriode(D.semaine.periode),
+    title: 'Changer la période couverte par la liste',
+    onclick: function () { ouvrirCalendrier(); },
+  }));
   if (afficherPrix()) {
     entete.appendChild(el('span', { class: 'doux', text: '·' }));
     entete.appendChild(el('span', { class: 'reste', text: texteTotal(t.totalRestant, t.sansPrixRestant) + ' restants' }));
@@ -3016,8 +3358,8 @@ function vueListe() {
   }
 
   // Ajout manuel en un champ
-  const champManuel = el('input', { type: 'text', placeholder: 'Ajouter un article (papier toilette, café…)', 'aria-label': 'Nom de l\'article' });
-  const champQteManuel = el('input', { type: 'text', placeholder: 'qté', 'aria-label': 'Quantité (facultative), par exemple 6 ou 2 kg', style: 'flex:0 1 96px' });
+  const champManuel = el('input', { type: 'text', placeholder: 'Ajouter un article (papier toilette, café…)', enterkeyhint: 'done', 'aria-label': 'Nom de l\'article' });
+  const champQteManuel = el('input', { type: 'text', placeholder: 'qté', inputmode: 'decimal', enterkeyhint: 'done', 'aria-label': 'Quantité (facultative), par exemple 6 ou 2 kg', style: 'flex:0 1 96px' });
   const selectRayonManuel = el('select', { 'aria-label': 'Rayon de l\'article', style: 'flex:0 1 170px' });
   D.reglages.ordreRayons.forEach(function (r) {
     selectRayonManuel.appendChild(el('option', { value: r, text: RAYON_LIBELLE[r], selected: r === 'autre' }));
@@ -3048,11 +3390,13 @@ function vueListe() {
   ]));
 
   // Actions
-  const actions = el('div', { class: 'barre-actions' }, [
-    el('button', { type: 'button', class: 'btn', text: 'Copier la liste', onclick: copierListe }),
-    el('button', { type: 'button', class: 'btn', text: 'Imprimer', onclick: function () { window.print(); } }),
-    el('button', { type: 'button', class: 'btn', text: 'Réinitialiser les cases', onclick: reinitialiserCases }),
-  ]);
+  const actions = el('div', { class: 'barre-actions' });
+  if (navigator.share) {
+    actions.appendChild(el('button', { type: 'button', class: 'btn principal', text: '↗ Partager la liste', onclick: partagerListe }));
+  }
+  actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Copier la liste', onclick: copierListe }));
+  actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Imprimer', onclick: function () { window.print(); } }));
+  actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Réinitialiser les cases', onclick: reinitialiserCases }));
   if ('wakeLock' in navigator) {
     const caseEcran = el('input', { type: 'checkbox', checked: etat.ecranAllume });
     caseEcran.addEventListener('change', function () { basculerWakeLock(caseEcran.checked); });
@@ -3060,6 +3404,16 @@ function vueListe() {
   }
   v.appendChild(el('div', { class: 'carte plate' }, [actions]));
 
+  // Acheter loin, c'est jeter : on le dit là où l'achat se décide.
+  if (nbJoursPeriode(D.semaine.periode) > 7) {
+    const frais = rayonsFraisDeLaListe(D);
+    if (frais.length) {
+      v.appendChild(el('div', { class: 'avert', style: 'margin-bottom:.6rem', text:
+        'Cette liste couvre ' + nbJoursPeriode(D.semaine.periode) + ' jours. ' +
+        frais.map(function (r) { return RAYON_LIBELLE[r].toLowerCase(); }).join(', ') +
+        ' ne se gardent pas si longtemps — mieux vaut les acheter au fur et à mesure.' }));
+    }
+  }
   if (afficherPrix()) {
     v.appendChild(el('p', { class: 'tpt doux', text:
       'Total de la liste : ' + texteTotal(t.totalTous, t.sansPrixTous) +
@@ -3239,7 +3593,7 @@ async function reinitialiserCases() {
 /** Liste au format texte, prête à coller. */
 function listeEnTexte() {
   const modele = construireListe(D);
-  const lignes = ['Liste de courses — ' + D.semaine.libelle, ''];
+  const lignes = ['Liste de courses — ' + libelleDePeriode(D.semaine.periode), ''];
   modele.groupes.forEach(function (g) {
     lignes.push(g.libelle.toUpperCase());
     g.articles.forEach(function (a) {
@@ -3256,6 +3610,28 @@ function listeEnTexte() {
     lignes.push('Total estimé : ' + texteTotal(modele.totaux.totalTous, modele.totaux.sansPrixTous));
   }
   return lignes.join('\n');
+}
+
+/**
+ * Partage par le menu du téléphone quand il existe, copie sinon.
+ * → true si le partage natif a pris la main.
+ */
+async function partagerTexte(titre, texte) {
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: titre, text: texte });
+      return true;
+    } catch (e) {
+      // Menu refermé sans choisir : ce n'est pas une erreur, on n'insiste pas.
+      if (e && e.name === 'AbortError') return true;
+    }
+  }
+  return false;
+}
+
+async function partagerListe() {
+  const fait = await partagerTexte('Liste de courses', listeEnTexte());
+  if (!fait) copierListe();
 }
 
 async function copierListe() {
@@ -3324,7 +3700,7 @@ function vueRecettes() {
   etat.editeurDom = null;
   v.innerHTML = '';
 
-  const champRecherche = el('input', { type: 'search', placeholder: 'Rechercher une recette…', 'aria-label': 'Rechercher une recette' });
+  const champRecherche = el('input', { type: 'search', placeholder: 'Rechercher une recette…', enterkeyhint: 'search', 'aria-label': 'Rechercher une recette' });
   const grille = el('div', { class: 'grille-recettes' });
   champRecherche.addEventListener('input', remplir);
   v.appendChild(el('div', { class: 'recherche' }, [
@@ -3372,7 +3748,9 @@ function vueRecettes() {
 function ouvrirEditeurRecette(recette) {
   const copie = recette
     ? JSON.parse(JSON.stringify(recette))
-    : { id: null, nom: '', tags: [], tempsPreparationMin: null, temperature: null, portionsDefaut: 4, derniereUtilisation: null, notes: '', lignes: [] };
+    : { id: null, nom: '', tags: [], tempsPreparationMin: null, temperature: null, saisons: [],
+        portionsDefaut: 4, derniereUtilisation: null, notes: '', lignes: [] };
+  if (!Array.isArray(copie.saisons)) copie.saisons = [];
   if (!copie.lignes.length) copie.lignes.push(ligneVide());
   etat.editionRecette = { travail: copie, idOriginal: recette ? recette.id : null };
   etat.editeurDom = null;
@@ -3425,6 +3803,22 @@ function construireEditeurRecette() {
     champTemperature.appendChild(el('option', { value: t[0], text: t[1], selected: r.temperature === t[0] }));
   });
   champTemperature.addEventListener('change', function () { r.temperature = champTemperature.value || null; });
+  // Aucune saison cochée = de toute l'année. C'est le cas courant, donc le défaut.
+  const zoneSaisons = el('div', { class: 'filtres', style: 'margin:0' });
+  SAISONS.forEach(function (sa) {
+    const b = el('button', { type: 'button', class: 'puce-filtre', text: sa[1],
+      'aria-pressed': String(r.saisons.indexOf(sa[0]) >= 0) });
+    b.addEventListener('click', function () {
+      const i = r.saisons.indexOf(sa[0]);
+      if (i >= 0) r.saisons.splice(i, 1); else r.saisons.push(sa[0]);
+      b.setAttribute('aria-pressed', String(r.saisons.indexOf(sa[0]) >= 0));
+      noteSaisons.textContent = r.saisons.length ? '' : 'Aucune saison cochée : de toute l\'année.';
+    });
+    zoneSaisons.appendChild(b);
+  });
+  const noteSaisons = el('span', { class: 'tpt doux',
+    text: r.saisons.length ? '' : 'Aucune saison cochée : de toute l\'année.' });
+
   const champPortions = el('input', { type: 'text', inputmode: 'numeric', value: r.portionsDefaut, placeholder: '4' });
   champPortions.addEventListener('input', function () {
     const n = parseNombre(champPortions.value);
@@ -3438,6 +3832,10 @@ function construireEditeurRecette() {
       el('label', { class: 'champ' }, [el('span', { text: 'Temps de préparation (min)' }), champTemps]),
       el('label', { class: 'champ' }, [el('span', { text: 'Plat servi' }), champTemperature]),
       el('label', { class: 'champ' }, [el('span', { text: 'Portions par défaut' }), champPortions]),
+    ]),
+    el('div', { class: 'champ' }, [
+      el('span', { style: 'display:block;font-size:.82rem;font-weight:600;color:var(--texte-doux);margin-bottom:.2rem', text: 'Saisons' }),
+      zoneSaisons, noteSaisons,
     ]),
     construireChampTags(r),
   ]));
@@ -3513,7 +3911,7 @@ function construireEditeurRecette() {
 
 function construireChampTags(r) {
   const zone = el('div', { class: 'barre-actions', style: 'margin-bottom:.4rem' });
-  const champ = el('input', { type: 'text', placeholder: 'Ajouter un tag (végétarien, rapide…)' });
+  const champ = el('input', { type: 'text', placeholder: 'Ajouter un tag (végétarien, rapide…)', enterkeyhint: 'done' });
   const boite = el('div', { style: 'position:relative;flex:1 1 200px' }, [champ]);
 
   function redessiner() {
@@ -3563,7 +3961,7 @@ function rendreLignes(focusCible) {
   r.lignes.forEach(function (ligne, index) {
     const ing = ligne.ingredientId ? ingredientParId(ligne.ingredientId) : null;
 
-    const champIng = el('input', { type: 'text', value: ing ? ing.nom : '', placeholder: 'Ingrédient…', 'aria-label': 'Ingrédient' });
+    const champIng = el('input', { type: 'text', value: ing ? ing.nom : '', placeholder: 'Ingrédient…', enterkeyhint: 'next', 'aria-label': 'Ingrédient' });
     const boiteIng = el('div', { style: 'position:relative;min-width:0' }, [champIng]);
     attacherAutocompletion(champIng, {
       items: function () {
@@ -3587,7 +3985,7 @@ function rendreLignes(focusCible) {
 
     const base = etat.baseSaisie;
     const champQte = el('input', {
-      type: 'text', inputmode: 'decimal',
+      type: 'text', inputmode: 'decimal', enterkeyhint: 'next',
       'aria-label': base === 1 ? 'Quantité pour 1 portion' : ('Quantité pour ' + base + ' portions'),
       value: (typeof ligne.quantite === 'number' && ligne.quantite !== null) ? formatNombre(ligne.quantite * base, 3) : '',
       placeholder: 'qté',
@@ -3762,6 +4160,7 @@ async function enregistrerRecette() {
     tags: r.tags.slice(),
     tempsPreparationMin: r.tempsPreparationMin,
     temperature: r.temperature || null,
+    saisons: r.saisons.slice(),
     portionsDefaut: r.portionsDefaut || 4,
     derniereUtilisation: cible ? cible.derniereUtilisation : null,
     notes: r.notes || '',
@@ -3824,7 +4223,7 @@ function vueReglages() {
   /* Référentiel des ingrédients */
   const carteRef = el('div', { class: 'carte' });
   carteRef.appendChild(el('h2', { text: 'Référentiel des ingrédients' }));
-  const champRech = el('input', { type: 'search', placeholder: 'Rechercher un ingrédient…', value: etat.rechercheIngredients, 'aria-label': 'Rechercher un ingrédient' });
+  const champRech = el('input', { type: 'search', placeholder: 'Rechercher un ingrédient…', value: etat.rechercheIngredients, enterkeyhint: 'search', 'aria-label': 'Rechercher un ingrédient' });
   champRech.addEventListener('input', function () { etat.rechercheIngredients = champRech.value; remplirTable(); });
   const barreRef = el('div', { class: 'recherche' }, [
     champRech,
@@ -4295,6 +4694,189 @@ async function effacerTout() {
   toast('Toutes les données ont été effacées.');
 }
 
+/* ——— CALENDRIER ET PLANIFICATION ————————————————————————————————————————
+   Planifier et acheter sont deux horizons différents. On peut prévoir des
+   repas aussi loin qu'on veut : ça ne périme rien. Ce qui périme, c'est ce
+   qu'on achète — donc c'est la période d'achat, et elle seule, qui décide de
+   ce qui entre dans la liste de courses.
+   ------------------------------------------------------------------------- */
+
+let moisAffiche = null;      // premier jour du mois montré dans le calendrier
+let jourOuvert = null;       // jour dont on édite les repas
+
+function ouvrirCalendrier(surJour) {
+  const p = D.semaine.periode;
+  moisAffiche = lundiDe(dateDepuisISO(p.debut) || new Date());
+  moisAffiche = new Date(moisAffiche.getFullYear(), moisAffiche.getMonth(), 1);
+  jourOuvert = surJour || null;
+
+  const corps = el('div', { class: 'calendrier' });
+  const boite = ouvrirModale({
+    titre: 'Planifier',
+    corps: [corps],
+    actions: [{ label: 'Fermer', variant: 'principal', onClick: function (f) { f(); rendre(); } }],
+  });
+  dessinerCalendrier(corps);
+  return boite;
+}
+
+function dessinerCalendrier(corps) {
+  corps.innerHTML = '';
+  const periode = D.semaine.periode;
+
+  /* --- Période d'achat --- */
+  const bandeau = el('div', { class: 'periode-achat' });
+  bandeau.appendChild(el('div', { class: 'tpt doux', text: 'Liste de courses pour' }));
+  const ligne = el('div', { class: 'periode-ligne' }, [
+    el('button', {
+      type: 'button', class: 'btn mini', text: '‹', 'aria-label': 'Période précédente',
+      onclick: async function () { await decalerPeriode(-1); dessinerCalendrier(corps); },
+    }),
+    el('span', { class: 'periode-nom', text: libelleDePeriode(periode) }),
+    el('button', {
+      type: 'button', class: 'btn mini', text: '›', 'aria-label': 'Période suivante',
+      onclick: async function () { await decalerPeriode(1); dessinerCalendrier(corps); },
+    }),
+  ]);
+  bandeau.appendChild(ligne);
+
+  const duree = el('div', { class: 'filtres', style: 'margin:.4rem 0 0' });
+  [1, 2, 3, 4].forEach(function (n) {
+    const jours = n * 7;
+    const actif = nbJoursPeriode(periode) === jours;
+    const b = el('button', {
+      type: 'button', class: 'puce-filtre', 'aria-pressed': String(actif),
+      text: n === 1 ? '1 semaine' : n + ' semaines',
+    });
+    b.addEventListener('click', async function () {
+      const d = dateDepuisISO(periode.debut);
+      await definirPeriode({ debut: periode.debut, fin: isoDuJour(ajouterJours(d, jours - 1)) });
+      dessinerCalendrier(corps);
+    });
+    duree.appendChild(b);
+  });
+  bandeau.appendChild(duree);
+
+  // L'avertissement de fraîcheur porte sur l'achat, pas sur le planning.
+  if (nbJoursPeriode(periode) > 7) {
+    const frais = rayonsFraisDeLaListe(D);
+    if (frais.length) {
+      bandeau.appendChild(el('p', { class: 'tpt', style: 'margin:.4rem 0 0;color:var(--danger)', text:
+        'Plus d\'une semaine d\'achats : ' + frais.map(function (r) { return RAYON_LIBELLE[r].toLowerCase(); }).join(', ') +
+        ' ne se gardent pas si longtemps. Planifiez loin si vous voulez, mais achetez le frais au fur et à mesure.' }));
+    }
+  }
+  corps.appendChild(bandeau);
+
+  /* --- Grille du mois --- */
+  const enteteMois = el('div', { class: 'periode-ligne', style: 'margin:.7rem 0 .3rem' }, [
+    el('button', { type: 'button', class: 'btn mini', text: '‹', 'aria-label': 'Mois précédent',
+      onclick: function () { moisAffiche = new Date(moisAffiche.getFullYear(), moisAffiche.getMonth() - 1, 1); dessinerCalendrier(corps); } }),
+    el('span', { class: 'periode-nom', text: MOIS[moisAffiche.getMonth()] + ' ' + moisAffiche.getFullYear() }),
+    el('button', { type: 'button', class: 'btn mini', text: '›', 'aria-label': 'Mois suivant',
+      onclick: function () { moisAffiche = new Date(moisAffiche.getFullYear(), moisAffiche.getMonth() + 1, 1); dessinerCalendrier(corps); } }),
+  ]);
+  corps.appendChild(enteteMois);
+
+  const grille = el('div', { class: 'grille-mois' });
+  JOURS_COURTS.forEach(function (j) { grille.appendChild(el('div', { class: 'entete-jour', text: j })); });
+
+  const premier = lundiDe(moisAffiche);
+  const auj = aujourdHuiISO();
+  for (let i = 0; i < 42; i++) {
+    const jour = ajouterJours(premier, i);
+    const iso = isoDuJour(jour);
+    const horsMois = jour.getMonth() !== moisAffiche.getMonth();
+    const repas = selectionDuJour(D, iso);
+    const classes = ['case-jour'];
+    if (horsMois) classes.push('hors-mois');
+    if (dansLaPeriode(iso, periode)) classes.push('dans-periode');
+    if (iso === auj) classes.push('aujourdhui');
+    if (iso === jourOuvert) classes.push('ouvert');
+
+    const c = el('button', { type: 'button', class: classes.join(' '),
+      'aria-label': jour.getDate() + ' ' + MOIS[jour.getMonth()] + (repas.length ? ', ' + repas.length + ' repas' : '') }, [
+      el('span', { class: 'num', text: String(jour.getDate()) }),
+      repas.length ? el('span', { class: 'points', text: repas.length > 3 ? '•••' : '•'.repeat(repas.length) }) : null,
+    ]);
+    c.addEventListener('click', function () { jourOuvert = (jourOuvert === iso) ? null : iso; dessinerCalendrier(corps); });
+    grille.appendChild(c);
+    if (i >= 34 && ajouterJours(premier, i + 1).getMonth() !== moisAffiche.getMonth()) break;
+  }
+  corps.appendChild(grille);
+
+  corps.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.4rem' }, [
+    el('button', { type: 'button', class: 'btn mini', text: 'Cette semaine', onclick: async function () {
+      await definirPeriode(periodeSemaineCourante()); moisAffiche = new Date(); jourOuvert = null; dessinerCalendrier(corps);
+    } }),
+    jourOuvert ? null : el('span', { class: 'tpt doux', style: 'align-self:center', text: 'Touchez un jour pour y placer des repas.' }),
+  ]));
+
+  /* --- Repas du jour ouvert --- */
+  if (jourOuvert) corps.appendChild(panneauDuJour(corps, jourOuvert));
+}
+
+function panneauDuJour(corps, iso) {
+  const jour = dateDepuisISO(iso);
+  const bloc = el('div', { class: 'carte plate jour-ouvert' });
+  bloc.appendChild(el('h3', { style: 'margin:0 0 .3rem', text:
+    JOURS_LONGS[(jour.getDay() + 6) % 7] + ' ' + jour.getDate() + ' ' + MOIS[jour.getMonth()] }));
+
+  if (!dansLaPeriode(iso, D.semaine.periode)) {
+    bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:0 0 .4rem', text:
+      'Hors de la période d\'achat : ces repas sont planifiés, mais leurs ingrédients ne sont pas dans la liste.' }));
+  }
+
+  const repas = selectionDuJour(D, iso);
+  if (!repas.length) {
+    bloc.appendChild(el('p', { class: 'pt doux', style: 'margin:.2rem 0', text: 'Aucun repas prévu ce jour-là.' }));
+  } else {
+    repas.forEach(function (e) {
+      const r = recetteParId(e.recetteId);
+      bloc.appendChild(el('div', { class: 'ligne-espace' }, [
+        el('div', { class: 'nom', text: r ? r.nom : '(recette supprimée)' }),
+        el('div', { class: 'stepper compact' }, [
+          el('button', { type: 'button', text: '−', 'aria-label': 'Moins de portions',
+            onclick: async function () { await changerPortionsEntree(e.id, -1); dessinerCalendrier(corps); } }),
+          el('span', { class: 'valeur', text: String(e.portions) }),
+          el('button', { type: 'button', text: '+', 'aria-label': 'Plus de portions',
+            onclick: async function () { await changerPortionsEntree(e.id, 1); dessinerCalendrier(corps); } }),
+        ]),
+        el('button', { type: 'button', class: 'btn mini fantome retirer', text: '✕', 'aria-label': 'Retirer ce repas',
+          onclick: async function () { await retirerEntree(e.id); dessinerCalendrier(corps); } }),
+      ]));
+    });
+  }
+
+  // Choix d'une recette à placer ce jour-là, par autocomplétion.
+  const champ = el('input', { type: 'text', placeholder: 'Ajouter un plat…', enterkeyhint: 'done',
+    'aria-label': 'Ajouter un plat à ce jour' });
+  const boite = el('div', { style: 'position:relative;margin-top:.4rem' }, [champ]);
+  attacherAutocompletion(champ, {
+    items: function () {
+      return D.recettes.map(function (r) {
+        return { cle: r.id, libelle: r.nom, secondaire: r.tempsPreparationMin ? r.tempsPreparationMin + ' min' : '' };
+      });
+    },
+    surChoix: async function (it) {
+      const r = recetteParId(it.cle);
+      if (!r) return;
+      champ.value = '';
+      await ajouterASemaine(r, iso);
+      dessinerCalendrier(corps);
+    },
+  });
+  bloc.appendChild(boite);
+  return bloc;
+}
+
+async function decalerPeriode(sens) {
+  const p = D.semaine.periode;
+  const n = nbJoursPeriode(p);
+  const d = ajouterJours(dateDepuisISO(p.debut), sens * n);
+  await definirPeriode({ debut: isoDuJour(d), fin: isoDuJour(ajouterJours(d, n - 1)) });
+}
+
 /* ——— PARTAGE ET SYNCHRONISATION —————————————————————————————————————————
    L'application ne connaît du réseau que ce que Store lui en dit : un état,
    un nom d'espace, et une racine qui change parfois toute seule.
@@ -4347,6 +4929,7 @@ async function rafraichirEtatEspaces() {
   bouton.hidden = !courant && !infosEspaces.espaces.length && !D.reglages.serveurSync;
   pastille.className = 'pastille ' + infosEspaces.etat;
   nom.textContent = courant ? courant.nom : 'Cet appareil';
+  bouton.classList.toggle('sans-espace', !courant);
   bouton.title = courant
     ? (ETAT_LIBELLE[infosEspaces.etat] || '') + (infosEspaces.enAttente ? ' · ' + infosEspaces.enAttente + ' en attente' : '')
     : 'Données de cet appareil seulement';
@@ -4421,6 +5004,10 @@ function montrerLienPartage() {
     ],
     actions: [
       { label: 'Fermer', onClick: function (f) { f(); } },
+      navigator.share ? { label: 'Partager', onClick: async function () {
+        const fait = await partagerTexte('Rejoindre mon espace de courses', lien);
+        if (!fait) toast('Partage indisponible : copiez le lien.');
+      } } : null,
       { label: 'Copier', variant: 'principal', onClick: async function () {
         let ok = false;
         try { if (navigator.clipboard) { await navigator.clipboard.writeText(lien); ok = true; } } catch (e) { ok = false; }
@@ -4687,6 +5274,7 @@ async function demarrer() {
     b.addEventListener('click', function () { allerA(b.dataset.tab); });
   });
   $('#bouton-espace').addEventListener('click', ouvrirSelecteurEspaces);
+  $('#bouton-calendrier').addEventListener('click', function () { ouvrirCalendrier(); });
   await rafraichirEtatEspaces();
 
   // Hauteur réelle de la barre de titre, pour que l'en-tête de la liste se cale
@@ -4696,7 +5284,7 @@ async function demarrer() {
     document.documentElement.style.setProperty('--h-topbar', h + 'px');
   };
   mesurerEntete();
-  window.addEventListener('resize', mesurerEntete);
+  window.addEventListener('resize', function () { mesurerEntete(); majLibellePeriode(); });
   window.addEventListener('orientationchange', mesurerEntete);
 
   // La liste de suggestions d'unités est utilisée par plusieurs formulaires.

@@ -226,7 +226,7 @@ const serveur = http.createServer(function (req, res) {
    ------------------------------------------------------------------------- */
 const COLLECTIONS_CLEF = {
   'ingredients': 'id', 'recettes': 'id', 'semainesTypes': 'id',
-  'semaine.selection': 'recetteId', 'semaine.ajoutsManuels': 'id',
+  'semaine.selection': 'id', 'semaine.ajoutsManuels': 'id',
 };
 function clefCollection(chemin) { return COLLECTIONS_CLEF[chemin.join('.')] || null; }
 
