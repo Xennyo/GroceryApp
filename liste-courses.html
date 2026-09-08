@@ -5,6 +5,17 @@
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="color-scheme" content="light dark">
 <title>Liste de courses</title>
+<!-- Installation sur l'écran d'accueil. Ces fichiers ne sont lus que sur une
+     version hébergée ; ouvert en double-clic, le fichier reste autonome. -->
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icone-180.png">
+<link rel="icon" href="icone-192.png" type="image/png">
+<meta name="theme-color" content="#0a6b4c" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#101317" media="(prefers-color-scheme: dark)">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Courses">
+<meta name="mobile-web-app-capable" content="yes">
 <style>
 /* =========================================================================
    ——— THÈME ———  Palette : un accent unique + des gris. Clair et sombre
@@ -3811,6 +3822,52 @@ async function effacerTout() {
 
 /* ——— DÉMARRAGE ——————————————————————————————————————————————————————————— */
 
+/**
+ * Rend l'application disponible hors ligne quand elle est servie en ligne.
+ * Ouverte en double-clic (file://), il n'y a pas de service worker : on ne
+ * tente rien et l'application fonctionne comme avant.
+ *
+ * Une nouvelle version n'est jamais imposée au milieu d'une session : le
+ * nouveau worker attend, et l'utilisateur choisit quand recharger.
+ */
+function enregistrerServiceWorker() {
+  if (!('serviceWorker' in navigator)) return;
+  if (location.protocol !== 'https:' && location.hostname !== 'localhost' && location.hostname !== '127.0.0.1') return;
+
+  // On ne recharge que si l'utilisateur a demandé la bascule. Sans ce garde-fou,
+  // la première prise de contrôle du worker rechargerait la page en pleine
+  // saisie, sans que personne ait rien demandé.
+  let basculeDemandee = false;
+  let rechargeEnCours = false;
+  navigator.serviceWorker.addEventListener('controllerchange', function () {
+    if (!basculeDemandee || rechargeEnCours) return;
+    rechargeEnCours = true;
+    location.reload();
+  });
+
+  navigator.serviceWorker.register('sw.js').then(function (reg) {
+    const proposer = function (worker) {
+      if (!worker) return;
+      toast('Nouvelle version disponible', {
+        duree: 60000, actionLabel: 'Recharger',
+        onAction: function () { basculeDemandee = true; worker.postMessage({ type: 'ACTIVER' }); },
+      });
+    };
+    // Une version déjà téléchargée attend peut-être depuis la visite précédente.
+    if (reg.waiting && navigator.serviceWorker.controller) proposer(reg.waiting);
+    reg.addEventListener('updatefound', function () {
+      const arrivant = reg.installing;
+      if (!arrivant) return;
+      arrivant.addEventListener('statechange', function () {
+        // Sans contrôleur, c'est la toute première installation : rien à proposer.
+        if (arrivant.state === 'installed' && navigator.serviceWorker.controller) proposer(arrivant);
+      });
+    });
+  }).catch(function () {
+    // Hors ligne au premier chargement, ou service worker refusé : sans effet.
+  });
+}
+
 function signalerModeDegrade() {
   const b = $('#bandeau-degrade');
   if (!b.hidden) return;
@@ -3869,6 +3926,8 @@ async function demarrer() {
   document.addEventListener('visibilitychange', function () {
     if (document.visibilityState === 'hidden') vider();
   });
+
+  enregistrerServiceWorker();
 
   // À l'impression, on déplie les rayons repliés puis on rétablit l'affichage.
   let repliesAvantImpression = [];
