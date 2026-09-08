@@ -467,6 +467,10 @@ const FAMILLES = [
   ['piece',  'Pièce (pièce, gousse, botte…)'],
 ];
 const FAMILLE_COURT = { masse: 'masse', volume: 'volume', piece: 'pièce' };
+// Un plat se sert chaud ou froid. Ça ne se déduit d'aucune autre donnée, et
+// c'est la question qu'on se pose vraiment au moment de composer la semaine.
+const TEMPERATURES = [['chaud', 'Chaud'], ['froid', 'Froid']];
+const TEMPERATURE_LIBELLE = Object.fromEntries(TEMPERATURES);
 const UNITES_PIECE_SUGGEREES = ['pièce', 'gousse', 'botte', 'tranche', 'pincée', 'brin', 'feuille', 'sachet', 'boîte', 'tige'];
 const PAR_PRIX_PAR_FAMILLE = { masse: 'kg', volume: 'L', piece: 'piece' };
 const PAR_PRIX_LIBELLE = { kg: '€/kg', L: '€/L', piece: '€/pièce' };
@@ -559,7 +563,7 @@ function donneesExemple() {
   d.recettes = [
     {
       id: 'rec_chili', nom: 'Chili sin carne', tags: ['végétarien', 'rapide'],
-      tempsPreparationMin: 35, portionsDefaut: 4, derniereUtilisation: null,
+      tempsPreparationMin: 35, temperature: 'chaud', portionsDefaut: 4, derniereUtilisation: null,
       notes: "Faire revenir l'oignon et le poivron, ajouter les épices, les tomates puis les haricots. Mijoter 25 min. Servir avec le riz.",
       lignes: [
         { ingredientId: 'ing_tomate_concassee', quantite: 0.2, unite: 'kg', fixe: false },
@@ -573,7 +577,7 @@ function donneesExemple() {
     },
     {
       id: 'rec_ratatouille', nom: 'Ratatouille', tags: ['végétarien'],
-      tempsPreparationMin: 50, portionsDefaut: 4, derniereUtilisation: null,
+      tempsPreparationMin: 50, temperature: 'chaud', portionsDefaut: 4, derniereUtilisation: null,
       notes: 'Couper les légumes en cubes réguliers, les cuire séparément puis les réunir 10 min.',
       lignes: [
         { ingredientId: 'ing_tomate_concassee', quantite: 150, unite: 'g', fixe: false },
@@ -588,7 +592,7 @@ function donneesExemple() {
     },
     {
       id: 'rec_pates_pesto', nom: 'Pâtes au pesto', tags: ['rapide', 'végétarien'],
-      tempsPreparationMin: 15, portionsDefaut: 2, derniereUtilisation: null,
+      tempsPreparationMin: 15, temperature: 'chaud', portionsDefaut: 2, derniereUtilisation: null,
       notes: 'Cuire les pâtes, détendre le pesto avec un peu d\'eau de cuisson, mélanger hors du feu.',
       lignes: [
         { ingredientId: 'ing_pates', quantite: 100, unite: 'g', fixe: false },
@@ -634,6 +638,7 @@ function normaliserRacine(d) {
       nom: String((r && r.nom) || 'Sans nom'),
       tags: Array.isArray(r && r.tags) ? r.tags.map(String) : [],
       tempsPreparationMin: (typeof (r && r.tempsPreparationMin) === 'number') ? r.tempsPreparationMin : null,
+      temperature: (r && TEMPERATURE_LIBELLE[r.temperature]) ? r.temperature : null,
       portionsDefaut: (typeof (r && r.portionsDefaut) === 'number' && r.portionsDefaut > 0) ? r.portionsDefaut : 4,
       derniereUtilisation: (r && r.derniereUtilisation) || null,
       notes: String((r && r.notes) || ''),
@@ -1213,9 +1218,9 @@ function ingredientsCorrespondants(recette, texte, parIngredient) {
 
 /**
  * Filtre le catalogue de recettes. Fonction pure : elle ne lit que ses arguments.
- * criteres = { texte, tag, tempsMax, fraicheur }
- *   tempsMax   : minutes, 0 = pas de limite
- *   fraicheur  : '' | 'jamais' (jamais faite) | 'oubliee' (pas faite depuis 30 jours)
+ * criteres = { texte, tag, tempsMax, temperature }
+ *   tempsMax    : minutes, 0 = pas de limite
+ *   temperature : '' | 'chaud' | 'froid'
  * → [{ recette, ingredientsTrouves:[] }] — ingredientsTrouves n'est rempli que
  *   lorsque c'est un ingrédient, et non le nom ou un tag, qui a fait mouche.
  */
@@ -1236,12 +1241,10 @@ function filtrerRecettes(donnees, criteres) {
       if (typeof r.tempsPreparationMin === 'number' && r.tempsPreparationMin > c.tempsMax) continue;
     }
 
-    if (c.fraicheur === 'jamais') {
-      if (r.derniereUtilisation) continue;
-    } else if (c.fraicheur === 'oubliee') {
-      const j = joursDepuis(r.derniereUtilisation);
-      if (j !== null && j < 30) continue;
-    }
+    // Contrairement au temps, une recette non classée est écartée : sinon le
+    // filtre ne filtre rien. La vue signale combien de recettes sont masquées
+    // pour cette raison, afin qu'on sache qu'il reste des fiches à renseigner.
+    if (c.temperature && r.temperature !== c.temperature) continue;
 
     let ingredientsTrouves = [];
     if (q) {
@@ -1254,6 +1257,19 @@ function filtrerRecettes(donnees, criteres) {
     resultat.push({ recette: r, ingredientsTrouves: ingredientsTrouves });
   }
   return resultat;
+}
+
+/**
+ * Recettes que le filtre chaud/froid écarte uniquement parce qu'elles ne sont
+ * pas classées — elles satisfont tous les autres critères.
+ */
+function recettesNonClassees(donnees, criteres) {
+  const c = criteres || {};
+  if (!c.temperature) return [];
+  const sansTemperature = Object.assign({}, c, { temperature: '' });
+  return filtrerRecettes(donnees, sansTemperature)
+    .filter(function (x) { return !x.recette.temperature; })
+    .map(function (x) { return x.recette; });
 }
 
 /** Jours écoulés depuis une date ISO (aaaa-mm-jj). null si absente. */
@@ -1538,7 +1554,7 @@ const etat = {
   rechercheRecettes: '',
   tagFiltre: '',
   filtreTempsMax: 0,               // minutes, 0 = pas de limite
-  filtreFraicheur: '',             // '' | 'jamais' | 'oubliee'
+  filtreTemperature: '',           // '' | 'chaud' | 'froid'
   rechercheIngredients: '',
   triRef: { colonne: 'nom', sens: 1 },
   editionRecette: null,            // { recette, nouvelle }
@@ -1886,20 +1902,20 @@ function vueSemaine() {
       }));
     });
     zoneFiltres.appendChild(el('span', { class: 'separateur', 'aria-hidden': 'true' }));
-    [['jamais', 'Jamais faite'], ['oubliee', 'Pas faite depuis 1 mois']].forEach(function (f) {
-      zoneFiltres.appendChild(bascule(f[1], etat.filtreFraicheur === f[0], function () {
-        etat.filtreFraicheur = (etat.filtreFraicheur === f[0]) ? '' : f[0];
+    TEMPERATURES.forEach(function (t) {
+      zoneFiltres.appendChild(bascule(t[1], etat.filtreTemperature === t[0], function () {
+        etat.filtreTemperature = (etat.filtreTemperature === t[0]) ? '' : t[0];
         remplirCartes();
       }));
     });
-    const filtre = etat.filtreTempsMax || etat.filtreFraicheur || etat.tagFiltre || etat.rechercheRecettes.trim();
+    const filtre = etat.filtreTempsMax || etat.filtreTemperature || etat.tagFiltre || etat.rechercheRecettes.trim();
     if (filtre) {
       zoneFiltres.appendChild(el('span', { class: 'tpt doux', style: 'margin-left:.2rem',
         text: nbTrouvees + ' recette' + (nbTrouvees > 1 ? 's' : '') + ' sur ' + D.recettes.length }));
       zoneFiltres.appendChild(el('button', {
         type: 'button', class: 'btn mini fantome', text: 'Tout afficher',
         onclick: function () {
-          etat.filtreTempsMax = 0; etat.filtreFraicheur = ''; etat.tagFiltre = ''; etat.rechercheRecettes = '';
+          etat.filtreTempsMax = 0; etat.filtreTemperature = ''; etat.tagFiltre = ''; etat.rechercheRecettes = '';
           champRecherche.value = ''; selectTag.value = '';
           remplirCartes();
         },
@@ -1919,18 +1935,27 @@ function vueSemaine() {
       return;
     }
 
-    const trouvees = filtrerRecettes(D, {
+    const criteres = {
       texte: etat.rechercheRecettes,
       tag: etat.tagFiltre,
       tempsMax: etat.filtreTempsMax,
-      fraicheur: etat.filtreFraicheur,
-    }).sort(function (a, b) {
+      temperature: etat.filtreTemperature,
+    };
+    const trouvees = filtrerRecettes(D, criteres).sort(function (a, b) {
       const sa = selectionDe(a.recette.id) ? 0 : 1, sb = selectionDe(b.recette.id) ? 0 : 1;
       if (sa !== sb) return sa - sb;
       return a.recette.nom.localeCompare(b.recette.nom, 'fr');
     });
     remplirFiltres(trouvees.length);
 
+    const nonClassees = recettesNonClassees(D, criteres);
+    if (nonClassees.length) {
+      grille.appendChild(el('div', { class: 'carte plate tpt doux', style: 'margin-bottom:.2rem' }, [
+        el('span', { text: nonClassees.length + ' recette' + (nonClassees.length > 1 ? 's ne sont pas classées' : ' n\'est pas classée') +
+          ' chaud / froid et n\'apparaî' + (nonClassees.length > 1 ? 'ssent' : 't') + ' donc pas : ' +
+          nonClassees.slice(0, 4).map(function (r) { return r.nom; }).join(', ') + (nonClassees.length > 4 ? '…' : '') + '.' }),
+      ]));
+    }
     if (!trouvees.length) {
       grille.appendChild(el('div', { class: 'rien', text: 'Aucune recette ne correspond à ces critères.' }));
       return;
@@ -1944,6 +1969,7 @@ function vueSemaine() {
 
       const meta = el('div', { class: 'meta' });
       if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
+      if (r.temperature) meta.appendChild(el('span', { class: 'puce', text: TEMPERATURE_LIBELLE[r.temperature] }));
       r.tags.forEach(function (tag) { meta.appendChild(el('span', { class: 'puce', text: tag })); });
       if (afficherPrix() && c.total > 0) {
         meta.appendChild(el('span', { class: 'puce', text: formatEuroFixe(c.parPortion) + ' / portion' }));
@@ -2025,6 +2051,7 @@ function apercuRecette(recette) {
 
   const meta = el('div', { class: 'barre-actions', style: 'margin-bottom:.5rem' });
   if (recette.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: recette.tempsPreparationMin + ' min' }));
+  if (recette.temperature) meta.appendChild(el('span', { class: 'puce', text: TEMPERATURE_LIBELLE[recette.temperature] }));
   recette.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
   const c = coutRecette(D, recette, portions);
   if (afficherPrix() && c.total > 0) {
@@ -2670,6 +2697,7 @@ function vueRecettes() {
       const c = coutRecette(D, r, r.portionsDefaut);
       const meta = el('div', { class: 'meta' });
       if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
+      if (r.temperature) meta.appendChild(el('span', { class: 'puce', text: TEMPERATURE_LIBELLE[r.temperature] }));
       meta.appendChild(el('span', { class: 'puce', text: r.lignes.length + ' ingrédient' + (r.lignes.length > 1 ? 's' : '') }));
       r.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
       if (afficherPrix()) {
@@ -2692,7 +2720,7 @@ function vueRecettes() {
 function ouvrirEditeurRecette(recette) {
   const copie = recette
     ? JSON.parse(JSON.stringify(recette))
-    : { id: null, nom: '', tags: [], tempsPreparationMin: null, portionsDefaut: 4, derniereUtilisation: null, notes: '', lignes: [] };
+    : { id: null, nom: '', tags: [], tempsPreparationMin: null, temperature: null, portionsDefaut: 4, derniereUtilisation: null, notes: '', lignes: [] };
   if (!copie.lignes.length) copie.lignes.push(ligneVide());
   etat.editionRecette = { travail: copie, idOriginal: recette ? recette.id : null };
   etat.editeurDom = null;
@@ -2731,6 +2759,12 @@ function construireEditeurRecette() {
   champNom.addEventListener('input', function () { r.nom = champNom.value; majApercuRecette(); });
   const champTemps = el('input', { type: 'text', inputmode: 'numeric', value: r.tempsPreparationMin || '', placeholder: 'ex. 35' });
   champTemps.addEventListener('input', function () { r.tempsPreparationMin = parseNombre(champTemps.value); });
+  const champTemperature = el('select');
+  champTemperature.appendChild(el('option', { value: '', text: '— non précisé —', selected: !r.temperature }));
+  TEMPERATURES.forEach(function (t) {
+    champTemperature.appendChild(el('option', { value: t[0], text: t[1], selected: r.temperature === t[0] }));
+  });
+  champTemperature.addEventListener('change', function () { r.temperature = champTemperature.value || null; });
   const champPortions = el('input', { type: 'text', inputmode: 'numeric', value: r.portionsDefaut, placeholder: '4' });
   champPortions.addEventListener('input', function () {
     const n = parseNombre(champPortions.value);
@@ -2742,6 +2776,7 @@ function construireEditeurRecette() {
     el('label', { class: 'champ' }, [el('span', { text: 'Nom de la recette' }), champNom]),
     el('div', { class: 'ligne-champs' }, [
       el('label', { class: 'champ' }, [el('span', { text: 'Temps de préparation (min)' }), champTemps]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Plat servi' }), champTemperature]),
       el('label', { class: 'champ' }, [el('span', { text: 'Portions par défaut' }), champPortions]),
     ]),
     construireChampTags(r),
@@ -3009,6 +3044,7 @@ async function enregistrerRecette() {
     nom: nom,
     tags: r.tags.slice(),
     tempsPreparationMin: r.tempsPreparationMin,
+    temperature: r.temperature || null,
     portionsDefaut: r.portionsDefaut || 4,
     derniereUtilisation: cible ? cible.derniereUtilisation : null,
     notes: r.notes || '',
