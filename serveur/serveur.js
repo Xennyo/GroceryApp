@@ -1,0 +1,292 @@
+/* Serveur de synchronisation de « Liste de courses ».
+ *
+ * Node seul, aucune dépendance. Un espace = un fichier JSON contenant le
+ * document et un journal des dernières opérations. Les clients envoient des
+ * opérations ciblées et récupèrent celles des autres depuis leur position.
+ *
+ *   node serveur/serveur.js --port 8787 --donnees ./donnees [--statique .]
+ *
+ * Sans comptes : chaque espace a une clé secrète, transmise en Bearer.
+ * Qui a la clé accède à l'espace. C'est le compromis assumé de cette étape.
+ */
+'use strict';
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
+
+const args = process.argv.slice(2);
+const opt = function (nom, defaut) {
+  const i = args.indexOf('--' + nom);
+  return i >= 0 && args[i + 1] ? args[i + 1] : defaut;
+};
+const PORT = Number(opt('port', process.env.PORT || 8787));
+const HOTE = opt('hote', process.env.HOST || '0.0.0.0');
+const DONNEES = path.resolve(opt('donnees', './donnees'));
+const STATIQUE = opt('statique', null) ? path.resolve(opt('statique')) : null;
+
+const TAILLE_MAX = 2 * 1024 * 1024;   // 2 Mo par requête
+const JOURNAL_MAX = 500;              // opérations conservées pour le rattrapage
+
+fs.mkdirSync(DONNEES, { recursive: true });
+
+/* ——— Stockage ——————————————————————————————————————————————————————————— */
+
+const ID_VALIDE = /^[a-z0-9]{16,40}$/;
+const fichierEspace = function (id) { return path.join(DONNEES, id + '.json'); };
+
+// Une file d'attente par espace : deux requêtes simultanées ne doivent pas
+// écraser mutuellement leur écriture.
+const files = new Map();
+function enFile(id, tache) {
+  const precedent = files.get(id) || Promise.resolve();
+  const suivant = precedent.then(tache, tache);
+  files.set(id, suivant.catch(function () {}));
+  return suivant;
+}
+
+function lireEspace(id) {
+  try { return JSON.parse(fs.readFileSync(fichierEspace(id), 'utf8')); }
+  catch (e) { return null; }
+}
+function ecrireEspace(id, espace) {
+  const tmp = fichierEspace(id) + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(espace));
+  fs.renameSync(tmp, fichierEspace(id));   // remplacement atomique
+}
+
+const empreinte = function (cle) { return crypto.createHash('sha256').update(String(cle)).digest('hex'); };
+// Identifiant d'espace : exactement 16 caractères [a-z0-9]. On tire jusqu'à
+// en avoir assez — filtrer sans compter produirait parfois un identifiant trop
+// court, donc un espace créé mais inatteignable.
+function identifiantEspace() {
+  let sortie = '';
+  while (sortie.length < 16) {
+    sortie += crypto.randomBytes(24).toString('base64url').toLowerCase().replace(/[^a-z0-9]/g, '');
+  }
+  return sortie.slice(0, 16);
+}
+
+/* ——— Utilitaires HTTP ——————————————————————————————————————————————————— */
+
+function repondre(res, code, corps) {
+  const texte = JSON.stringify(corps);
+  res.writeHead(code, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Headers': 'Authorization, Content-Type',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+  });
+  res.end(texte);
+}
+
+function lireCorps(req) {
+  return new Promise(function (resoudre, rejeter) {
+    let total = 0;
+    const morceaux = [];
+    req.on('data', function (m) {
+      total += m.length;
+      if (total > TAILLE_MAX) { rejeter(new Error('corps trop volumineux')); req.destroy(); return; }
+      morceaux.push(m);
+    });
+    req.on('end', function () {
+      if (!morceaux.length) return resoudre({});
+      try { resoudre(JSON.parse(Buffer.concat(morceaux).toString('utf8'))); }
+      catch (e) { rejeter(new Error('JSON invalide')); }
+    });
+    req.on('error', rejeter);
+  });
+}
+
+function cleFournie(req) {
+  const h = req.headers.authorization || '';
+  const m = h.match(/^Bearer\s+(.+)$/i);
+  return m ? m[1].trim() : null;
+}
+
+/* ——— Fichiers statiques (facultatif) ————————————————————————————————————— */
+
+const TYPES = {
+  '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8',
+  '.css': 'text/css; charset=utf-8', '.png': 'image/png', '.svg': 'image/svg+xml',
+  '.json': 'application/json; charset=utf-8', '.webmanifest': 'application/manifest+json; charset=utf-8',
+  '.ico': 'image/x-icon', '.txt': 'text/plain; charset=utf-8',
+};
+
+function servirStatique(req, res) {
+  if (!STATIQUE) { repondre(res, 404, { erreur: 'introuvable' }); return; }
+  let chemin = decodeURIComponent((req.url || '/').split('?')[0]);
+  if (chemin === '/') chemin = '/index.html';
+  const cible = path.join(STATIQUE, chemin);
+  if (!cible.startsWith(STATIQUE + path.sep) && cible !== STATIQUE) { repondre(res, 403, { erreur: 'refusé' }); return; }
+  fs.stat(cible, function (err, st) {
+    if (err || !st.isFile()) { repondre(res, 404, { erreur: 'introuvable' }); return; }
+    // Le service worker ne doit jamais être servi depuis un cache HTTP long,
+    // sinon les mises à jour n'arrivent plus.
+    const cache = /sw\.js$/.test(cible) ? 'no-cache' : 'public, max-age=300';
+    res.writeHead(200, { 'Content-Type': TYPES[path.extname(cible)] || 'application/octet-stream', 'Cache-Control': cache });
+    fs.createReadStream(cible).pipe(res);
+  });
+}
+
+/* ——— Routes ————————————————————————————————————————————————————————————— */
+
+const serveur = http.createServer(function (req, res) {
+  if (req.method === 'OPTIONS') { repondre(res, 204, {}); return; }
+
+  const url = new URL(req.url, 'http://' + (req.headers.host || 'localhost'));
+  const chemin = url.pathname;
+
+  if (chemin === '/api/sante') { repondre(res, 200, { etat: 'ok', version: 1 }); return; }
+
+  // Création d'un espace
+  if (chemin === '/api/espaces' && req.method === 'POST') {
+    lireCorps(req).then(function (corps) {
+      const id = identifiantEspace();
+      const cle = crypto.randomBytes(24).toString('base64url');
+      const espace = {
+        id: id, cleEmpreinte: empreinte(cle),
+        nom: String((corps && corps.nom) || 'Mon espace').slice(0, 80),
+        version: 0, document: (corps && corps.document) || null,
+        journal: [], creeLe: new Date().toISOString(),
+      };
+      if (espace.document) espace.version = 1;
+      enFile(id, function () { ecrireEspace(id, espace); }).then(function () {
+        repondre(res, 200, { id: id, cle: cle, nom: espace.nom, version: espace.version });
+      });
+    }).catch(function (e) { repondre(res, 400, { erreur: e.message }); });
+    return;
+  }
+
+  const m = chemin.match(/^\/api\/espaces\/([^/]+)(\/operations)?$/);
+  if (m) {
+    const id = m[1];
+    const surOperations = !!m[2];
+    if (!ID_VALIDE.test(id)) { repondre(res, 400, { erreur: 'identifiant invalide' }); return; }
+
+    const espace = lireEspace(id);
+    if (!espace) { repondre(res, 404, { erreur: 'espace introuvable' }); return; }
+    const cle = cleFournie(req);
+    if (!cle || empreinte(cle) !== espace.cleEmpreinte) { repondre(res, 401, { erreur: 'clé invalide' }); return; }
+
+    // Lecture : le document complet, ou seulement ce qui a changé.
+    if (!surOperations && req.method === 'GET') {
+      const depuis = Number(url.searchParams.get('depuis') || 0);
+      const plusAncien = espace.journal.length ? espace.journal[0].v : espace.version + 1;
+      if (depuis > 0 && depuis >= plusAncien - 1 && depuis <= espace.version) {
+        const suite = espace.journal.filter(function (e) { return e.v > depuis; });
+        repondre(res, 200, { id: id, nom: espace.nom, version: espace.version, operations: suite });
+        return;
+      }
+      repondre(res, 200, { id: id, nom: espace.nom, version: espace.version, document: espace.document });
+      return;
+    }
+
+    // Écriture : on ajoute des opérations à la suite du journal.
+    if (surOperations && req.method === 'POST') {
+      lireCorps(req).then(function (corps) {
+        const operations = Array.isArray(corps.operations) ? corps.operations : [];
+        return enFile(id, function () {
+          const frais = lireEspace(id);
+          if (!frais) throw new Error('espace introuvable');
+          if (corps.document && frais.version === 0) {
+            // Premier dépôt : l'espace prend le document tel quel.
+            frais.document = corps.document;
+          }
+          if (operations.length) {
+            if (!frais.document) frais.document = {};
+            appliquerOperations(frais.document, operations);
+            frais.version += 1;
+            frais.journal.push({ v: frais.version, operations: operations, ts: Date.now(), auteur: String(corps.auteur || '').slice(0, 40) });
+            if (frais.journal.length > JOURNAL_MAX) frais.journal = frais.journal.slice(-JOURNAL_MAX);
+          } else if (corps.document && frais.version === 0) {
+            frais.version = 1;
+          }
+          if (typeof corps.nom === 'string' && corps.nom.trim()) frais.nom = corps.nom.trim().slice(0, 80);
+          ecrireEspace(id, frais);
+          return { version: frais.version, nom: frais.nom };
+        });
+      }).then(function (r) { repondre(res, 200, r); })
+        .catch(function (e) { repondre(res, 400, { erreur: e.message }); });
+      return;
+    }
+
+    repondre(res, 405, { erreur: 'méthode non autorisée' });
+    return;
+  }
+
+  servirStatique(req, res);
+});
+
+/* ——— Application des opérations, côté serveur ————————————————————————————
+   Miroir exact de la logique du client. Les deux doivent rester identiques :
+   c'est ce qui garantit que tout le monde voit le même document.
+   ------------------------------------------------------------------------- */
+const COLLECTIONS_CLEF = {
+  'ingredients': 'id', 'recettes': 'id', 'semainesTypes': 'id',
+  'semaine.selection': 'recetteId', 'semaine.ajoutsManuels': 'id',
+};
+function clefCollection(chemin) { return COLLECTIONS_CLEF[chemin.join('.')] || null; }
+
+function appliquerOperation(doc, op) {
+  const chemin = op.c;
+  if (!Array.isArray(chemin) || !chemin.length) return doc;
+  let noeud = doc;
+  for (let i = 0; i < chemin.length - 1; i++) {
+    const seg = chemin[i];
+    const clef = clefCollection(chemin.slice(0, i + 1));
+    if (clef && Array.isArray(noeud[seg])) {
+      const suivant = chemin[i + 1];
+      let entree = noeud[seg].find(function (e) { return String(e[clef]) === String(suivant); });
+      if (!entree) {
+        if (i + 2 === chemin.length && op.d) return doc;
+        if (i + 2 === chemin.length) { noeud[seg].push(op.v); return doc; }
+        entree = {}; entree[clef] = suivant; noeud[seg].push(entree);
+      }
+      if (i + 2 === chemin.length) {
+        if (op.d) noeud[seg] = noeud[seg].filter(function (e) { return String(e[clef]) !== String(suivant); });
+        else noeud[seg][noeud[seg].indexOf(entree)] = op.v;
+        return doc;
+      }
+      noeud = entree; i += 1; continue;
+    }
+    if (noeud[seg] === undefined || noeud[seg] === null) noeud[seg] = {};
+    noeud = noeud[seg];
+  }
+  const dernier = chemin[chemin.length - 1];
+  if (dernier === '__ordre') return doc;
+  if (op.d) delete noeud[dernier];
+  else noeud[dernier] = op.v;
+  return doc;
+}
+
+function appliquerOperations(doc, operations) {
+  const ordres = [];
+  (operations || []).forEach(function (op) {
+    if (op && Array.isArray(op.c) && op.c[op.c.length - 1] === '__ordre') { ordres.push(op); return; }
+    if (op && Array.isArray(op.c)) appliquerOperation(doc, op);
+  });
+  ordres.forEach(function (op) {
+    const cheminTableau = op.c.slice(0, -1);
+    const clef = clefCollection(cheminTableau);
+    if (!clef) return;
+    let noeud = doc;
+    for (let i = 0; i < cheminTableau.length - 1; i++) noeud = noeud[cheminTableau[i]];
+    const nom = cheminTableau[cheminTableau.length - 1];
+    if (!Array.isArray(noeud[nom])) return;
+    const parClef = new Map(noeud[nom].map(function (e) { return [String(e[clef]), e]; }));
+    const ordonne = [];
+    (op.v || []).forEach(function (k) { if (parClef.has(k)) { ordonne.push(parClef.get(k)); parClef.delete(k); } });
+    parClef.forEach(function (e) { ordonne.push(e); });
+    noeud[nom] = ordonne;
+  });
+  return doc;
+}
+
+serveur.listen(PORT, HOTE, function () {
+  console.log('Synchronisation à l\'écoute sur http://' + HOTE + ':' + PORT);
+  console.log('  données  : ' + DONNEES);
+  console.log('  statique : ' + (STATIQUE || '(aucun)'));
+});

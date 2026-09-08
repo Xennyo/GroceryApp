@@ -108,6 +108,22 @@ a{ color:var(--accent); }
 }
 .topbar .titre{ font-weight:650; font-size:1.05rem; margin:0; flex:1; min-width:0;
   overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.bouton-espace{
+  flex:0 1 auto; min-width:0; display:inline-flex; align-items:center; gap:.35rem;
+  background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
+  padding:.2rem .6rem; min-height:36px; cursor:pointer; font:inherit; font-size:.82rem;
+  font-weight:600; color:var(--texte); max-width:52%;
+}
+.bouton-espace:hover{ border-color:var(--border-fort); }
+.bouton-espace .nom-espace{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.pastille{ flex:0 0 auto; width:9px; height:9px; border-radius:50%; background:var(--texte-doux); }
+.pastille.synchronise{ background:var(--accent); }
+.pastille.envoi{ background:#c98a00; }
+.pastille.horsligne,.pastille.erreur{ background:var(--danger); }
+.ligne-espace{ display:flex; align-items:center; gap:.5rem; padding:.4rem 0; border-top:1px solid var(--border); }
+.ligne-espace:first-child{ border-top:0; }
+.ligne-espace .nom{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.ligne-espace .actuel{ font-weight:700; color:var(--accent); }
 main{
   flex:1; width:100%; max-width:960px; margin:0 auto;
   padding:.75rem .75rem calc(84px + env(safe-area-inset-bottom));
@@ -450,6 +466,10 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
     <header class="topbar">
       <h1 class="titre" id="titre-page">Semaine</h1>
       <span id="entete-extra" class="pt doux"></span>
+      <button type="button" class="bouton-espace" id="bouton-espace" hidden>
+        <span class="pastille" id="pastille-sync"></span>
+        <span class="nom-espace" id="nom-espace">Cet appareil</span>
+      </button>
     </header>
     <main>
       <section class="vue actif" id="vue-semaine" aria-label="Semaine"></section>
@@ -550,6 +570,7 @@ function donneesVides() {
       afficherPrix: true,
       theme: 'auto',
       portionsBase: 4,
+      serveurSync: '',
     },
   };
 }
@@ -735,6 +756,7 @@ function normaliserRacine(d) {
     afficherPrix: g.afficherPrix !== false,
     theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
     portionsBase: (typeof g.portionsBase === 'number' && g.portionsBase > 0) ? Math.min(99, Math.round(g.portionsBase)) : 4,
+    serveurSync: (typeof g.serveurSync === 'string') ? g.serveurSync.replace(/\/+$/, '') : '',
   };
   return out;
 }
@@ -775,59 +797,206 @@ function migrate(donnees) {
    seule ligne d'appelant ne change.
    ------------------------------------------------------------------------- */
 const Store = (function () {
-  const CLE = 'listeCourses.v1';
+  const CLE_LOCALE = 'listeCourses.v1';          // document hors espace (V1, inchangé)
+  const CLE_REGISTRE = 'listeCourses.espaces';   // liste des espaces connus de cet appareil
+  const PREFIXE_ESPACE = 'listeCourses.espace.'; // cache local d'un espace synchronisé
   const DEBOUNCE_MS = 400;
+  const SONDAGE_MS = 5000;
 
   let racine = null;          // objet racine en mémoire (source de vérité de la session)
   let minuteur = null;        // écriture différée
   let modeMemoire = false;    // true si l'écriture est impossible dans ce navigateur
-  let auxPannes = null;       // callback d'information de l'interface
+  let auxPannes = null;
+  let auxChangements = null;  // l'interface reçoit la racine mise à jour à distance
+  let auxEtat = null;         // l'interface reçoit l'état de la synchronisation
 
-  function lireBrut() {
-    try {
-      return localStorage.getItem(CLE);
-    } catch (e) {
-      modeMemoire = true;
-      if (auxPannes) auxPannes(e);
-      return null;
-    }
+  // État de synchronisation de l'espace courant.
+  let espaceCourant = null;   // { id, cle, nom, serveur }
+  let version = 0;            // dernière version connue du serveur
+  let base = null;            // document tel que le serveur l'a, à notre connaissance
+  let enAttente = [];         // opérations locales pas encore acceptées
+  let etat = 'local';         // local | synchronise | envoi | horsligne | erreur
+  let sondage = null;
+  let echangeEnCours = false;
+  const auteur = Math.random().toString(36).slice(2, 8);
+
+  /* --- Accès brut au stockage du navigateur. Seul endroit du fichier. --- */
+  function lireBrut(cle) {
+    try { return localStorage.getItem(cle); }
+    catch (e) { modeMemoire = true; if (auxPannes) auxPannes(e); return null; }
   }
-  function ecrireBrut(texte) {
-    try {
-      localStorage.setItem(CLE, texte);
-      return true;
-    } catch (e) {
-      modeMemoire = true;
-      if (auxPannes) auxPannes(e);
-      return false;
-    }
+  function ecrireBrut(cle, texte) {
+    try { localStorage.setItem(cle, texte); return true; }
+    catch (e) { modeMemoire = true; if (auxPannes) auxPannes(e); return false; }
   }
-  function effacerBrut() {
-    try {
-      localStorage.removeItem(CLE);
-    } catch (e) {
-      modeMemoire = true;
-      if (auxPannes) auxPannes(e);
-    }
+  function effacerBrut(cle) {
+    try { localStorage.removeItem(cle); }
+    catch (e) { modeMemoire = true; if (auxPannes) auxPannes(e); }
   }
 
+  const copie = function (o) { return o === null || o === undefined ? o : JSON.parse(JSON.stringify(o)); };
+
+  /* --- Registre des espaces (local à l'appareil, jamais synchronisé) --- */
+  function lireRegistre() {
+    try {
+      const t = lireBrut(CLE_REGISTRE);
+      const r = t ? JSON.parse(t) : null;
+      if (!r || !Array.isArray(r.espaces)) return { courant: null, espaces: [] };
+      return { courant: r.courant || null, espaces: r.espaces };
+    } catch (e) { return { courant: null, espaces: [] }; }
+  }
+  function ecrireRegistre(r) { ecrireBrut(CLE_REGISTRE, JSON.stringify(r)); }
+
+  function cleEspace(id) { return PREFIXE_ESPACE + id; }
+
+  function signalerEtat(e) {
+    if (e === etat) return;
+    etat = e;
+    if (auxEtat) auxEtat(etat, espaceCourant);
+  }
+
+  /* --- Écriture locale --- */
   function ecrireMaintenant() {
     if (minuteur) { clearTimeout(minuteur); minuteur = null; }
     if (racine === null) return;
-    let texte;
-    try { texte = JSON.stringify(racine); }
-    catch (e) { if (auxPannes) auxPannes(e); return; }
-    ecrireBrut(texte);
+    try {
+      if (espaceCourant) {
+        ecrireBrut(cleEspace(espaceCourant.id), JSON.stringify({
+          document: racine, version: version, base: base, enAttente: enAttente,
+        }));
+      } else {
+        ecrireBrut(CLE_LOCALE, JSON.stringify(racine));
+      }
+    } catch (e) { if (auxPannes) auxPannes(e); }
   }
   function programmerEcriture() {
     if (minuteur) clearTimeout(minuteur);
     minuteur = setTimeout(ecrireMaintenant, DEBOUNCE_MS);
   }
 
+  /* --- Fabrication des opérations à partir des modifications locales --- */
+  function noterModifications() {
+    if (!espaceCourant || base === null) return;
+    const ops = differencesEnOperations(base, racine);
+    if (!ops.length) return;
+    enAttente = enAttente.concat(ops);
+    base = copie(racine);   // la base suit le local ; le serveur les recevra
+  }
+
+  /* --- Dialogue avec le serveur --- */
+  function urlEspace(suffixe) {
+    const s = String(espaceCourant.serveur).replace(/\/+$/, '');
+    return s + '/api/espaces/' + espaceCourant.id + (suffixe || '');
+  }
+  function entetes() {
+    return { 'Authorization': 'Bearer ' + espaceCourant.cle, 'Content-Type': 'application/json' };
+  }
+
+  async function echanger(forcerComplet) {
+    if (!espaceCourant || echangeEnCours) return;
+    echangeEnCours = true;
+    try {
+      // La position d'où l'on relit est celle d'AVANT l'envoi. Repartir de la
+      // version renvoyée par le serveur ferait sauter tout ce que les autres
+      // ont écrit entre-temps : celui qui pousse en dernier ne verrait jamais
+      // le travail de l'autre. Relire ses propres opérations est sans effet,
+      // elles sont idempotentes.
+      const versionAvant = version;
+
+      // 1. Pousser ce qui attend, pour que le serveur en tienne compte avant
+      //    de nous répondre.
+      if (enAttente.length) {
+        signalerEtat('envoi');
+        const aEnvoyer = enAttente.slice();
+        const rep = await fetch(urlEspace('/operations'), {
+          method: 'POST', headers: entetes(),
+          body: JSON.stringify({ operations: aEnvoyer, auteur: auteur }),
+        });
+        if (!rep.ok) throw new Error('envoi refusé (' + rep.status + ')');
+        await rep.json();
+        enAttente = enAttente.slice(aEnvoyer.length);
+      }
+
+      // 2. Récupérer tout ce qui s'est écrit depuis notre position d'origine.
+      const rep2 = await fetch(urlEspace('?depuis=' + (forcerComplet ? 0 : versionAvant)), { headers: entetes() });
+      if (!rep2.ok) throw new Error('lecture refusée (' + rep2.status + ')');
+      const r2 = await rep2.json();
+      if (r2.nom && espaceCourant.nom !== r2.nom) {
+        espaceCourant.nom = r2.nom;
+        const reg = lireRegistre();
+        const e = reg.espaces.find(function (x) { return x.id === espaceCourant.id; });
+        if (e) { e.nom = r2.nom; ecrireRegistre(reg); }
+      }
+
+      let change = false;
+      if (r2.document) {
+        base = r2.document;
+        version = r2.version;
+        change = true;
+      } else if (r2.operations && r2.operations.length) {
+        r2.operations.forEach(function (entree) { appliquerOperations(base, entree.operations); });
+        version = r2.version;
+        change = true;
+      }
+
+      if (change) {
+        // Le local est rebâti : ce que dit le serveur, plus ce qui n'est pas
+        // encore parti. Sans ce rejeu, une saisie en cours serait écrasée.
+        racine = normaliserRacine(appliquerOperations(copie(base), enAttente));
+        ecrireMaintenant();
+        if (auxChangements) auxChangements(racine);
+      } else {
+        ecrireMaintenant();
+      }
+      signalerEtat(enAttente.length ? 'envoi' : 'synchronise');
+    } catch (e) {
+      signalerEtat(navigator.onLine === false ? 'horsligne' : 'erreur');
+    } finally {
+      echangeEnCours = false;
+    }
+  }
+
+  function demarrerSondage() {
+    arreterSondage();
+    if (!espaceCourant) return;
+    sondage = setInterval(function () {
+      if (document.visibilityState === 'visible') echanger(false);
+    }, SONDAGE_MS);
+  }
+  function arreterSondage() { if (sondage) { clearInterval(sondage); sondage = null; } }
+
+  async function ouvrirEspace(e) {
+    espaceCourant = e;
+    const t = lireBrut(cleEspace(e.id));
+    let cache = null;
+    try { cache = t ? JSON.parse(t) : null; } catch (err) { cache = null; }
+    if (cache && cache.document) {
+      racine = migrate(cache.document);
+      base = cache.base || copie(racine);
+      version = cache.version || 0;
+      enAttente = Array.isArray(cache.enAttente) ? cache.enAttente : [];
+    } else {
+      racine = null; base = null; version = 0; enAttente = [];
+    }
+    signalerEtat('envoi');
+    await echanger(racine === null);
+    if (racine === null && base) racine = normaliserRacine(copie(base));
+    demarrerSondage();
+    return racine;
+  }
+
   return {
     /** → l'objet racine complet, ou null si rien n'a encore été stocké. */
     async load() {
-      const texte = lireBrut();
+      const reg = lireRegistre();
+      if (reg.courant) {
+        const e = reg.espaces.find(function (x) { return x.id === reg.courant; });
+        if (e) return await ouvrirEspace(e);
+      }
+      espaceCourant = null;
+      arreterSondage();
+      signalerEtat('local');
+      const texte = lireBrut(CLE_LOCALE);
       if (texte === null || texte === '') return null;
       let brut;
       try { brut = JSON.parse(texte); }
@@ -840,7 +1009,9 @@ const Store = (function () {
     /** Remplace l'objet racine. L'écriture est différée (400 ms). */
     async save(donnees) {
       racine = donnees;
+      noterModifications();
       programmerEcriture();
+      if (espaceCourant) echanger(false);
       return racine;
     },
 
@@ -855,14 +1026,17 @@ const Store = (function () {
       }
       if (valeur === undefined) delete noeud[parts[parts.length - 1]];
       else noeud[parts[parts.length - 1]] = valeur;
+      if (espaceCourant && base !== null) {
+        enAttente.push(valeur === undefined ? { c: parts, d: true } : { c: parts, v: valeur });
+        appliquerOperations(base, [valeur === undefined ? { c: parts, d: true } : { c: parts, v: valeur }]);
+      }
       programmerEcriture();
+      if (espaceCourant) echanger(false);
       return racine;
     },
 
     /** → chaîne JSON lisible. */
-    async export() {
-      return JSON.stringify(racine, null, 2);
-    },
+    async export() { return JSON.stringify(racine, null, 2); },
 
     /** Valide, migre si besoin, remplace. Écrit immédiatement. */
     async import(json) {
@@ -870,14 +1044,14 @@ const Store = (function () {
       if (typeof json === 'string') {
         try { brut = JSON.parse(json); }
         catch (e) { throw new Error('Fichier illisible : ce n\'est pas du JSON valide.'); }
-      } else {
-        brut = json;
-      }
+      } else { brut = json; }
       if (!brut || typeof brut !== 'object' || !Array.isArray(brut.ingredients) || !Array.isArray(brut.recettes)) {
         throw new Error('Fichier inattendu : il ne contient ni « ingredients » ni « recettes ».');
       }
       racine = migrate(brut);
+      noterModifications();
       ecrireMaintenant();
+      if (espaceCourant) echanger(false);
       return racine;
     },
 
@@ -887,16 +1061,133 @@ const Store = (function () {
     /** Efface tout le contenu stocké et repart de zéro. */
     async reset(donnees) {
       racine = donnees || null;
-      if (racine === null) { effacerBrut(); return null; }
+      if (racine === null) {
+        if (espaceCourant) effacerBrut(cleEspace(espaceCourant.id));
+        else effacerBrut(CLE_LOCALE);
+        return null;
+      }
+      noterModifications();
       ecrireMaintenant();
+      if (espaceCourant) echanger(false);
       return racine;
     },
+
+    /* --- Espaces partagés --- */
+
+    /** Registre local : les espaces connus de cet appareil et celui affiché. */
+    async espaces() {
+      const reg = lireRegistre();
+      return {
+        courant: reg.courant,
+        etat: etat,
+        enAttente: enAttente.length,
+        espaces: reg.espaces.map(function (e) { return { id: e.id, nom: e.nom, serveur: e.serveur }; }),
+      };
+    },
+
+    /** Publie le document courant dans un nouvel espace et bascule dessus. */
+    async creerEspace(nom, serveur, document) {
+      const s = String(serveur).replace(/\/+$/, '');
+      const rep = await fetch(s + '/api/espaces', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nom: nom || 'Mon espace', document: document || racine }),
+      });
+      if (!rep.ok) throw new Error('Le serveur a refusé la création (' + rep.status + ').');
+      const r = await rep.json();
+      const e = { id: r.id, cle: r.cle, nom: r.nom, serveur: s };
+      const reg = lireRegistre();
+      reg.espaces.push(e);
+      reg.courant = e.id;
+      ecrireRegistre(reg);
+      espaceCourant = e;
+      racine = document || racine;
+      base = copie(racine);
+      version = r.version || 1;
+      enAttente = [];
+      ecrireMaintenant();
+      demarrerSondage();
+      signalerEtat('synchronise');
+      return { id: e.id, nom: e.nom, lien: this.lienPartage(e) };
+    },
+
+    /** Rejoint un espace existant à partir d'un lien de partage. */
+    async rejoindreEspace(lien) {
+      const infos = Store.lireLienPartage(lien);
+      if (!infos) throw new Error('Lien de partage illisible.');
+      const rep = await fetch(infos.serveur + '/api/espaces/' + infos.id, {
+        headers: { 'Authorization': 'Bearer ' + infos.cle },
+      });
+      if (rep.status === 401) throw new Error('Clé refusée : ce lien n\'ouvre pas cet espace.');
+      if (!rep.ok) throw new Error('Espace introuvable sur ce serveur.');
+      const r = await rep.json();
+      const e = { id: infos.id, cle: infos.cle, nom: r.nom || 'Espace partagé', serveur: infos.serveur };
+      const reg = lireRegistre();
+      if (!reg.espaces.some(function (x) { return x.id === e.id; })) reg.espaces.push(e);
+      reg.courant = e.id;
+      ecrireRegistre(reg);
+      effacerBrut(cleEspace(e.id));
+      return await ouvrirEspace(e);
+    },
+
+    /** Bascule sur un autre espace, ou sur les données locales si id est null. */
+    async changerEspace(id) {
+      ecrireMaintenant();
+      const reg = lireRegistre();
+      reg.courant = id || null;
+      ecrireRegistre(reg);
+      arreterSondage();
+      version = 0; base = null; enAttente = []; racine = null;
+      return await this.load();
+    },
+
+    /** Retire un espace de cet appareil. Le contenu reste sur le serveur. */
+    async quitterEspace(id) {
+      const reg = lireRegistre();
+      reg.espaces = reg.espaces.filter(function (e) { return e.id !== id; });
+      if (reg.courant === id) reg.courant = null;
+      ecrireRegistre(reg);
+      effacerBrut(cleEspace(id));
+      if (espaceCourant && espaceCourant.id === id) {
+        espaceCourant = null; arreterSondage();
+        version = 0; base = null; enAttente = []; racine = null;
+        signalerEtat('local');
+        return await this.load();
+      }
+      return racine;
+    },
+
+    /** Lien à transmettre pour rejoindre un espace. La clé y est incluse. */
+    lienPartage(espace) {
+      const e = espace || espaceCourant;
+      if (!e) return null;
+      const socle = (typeof location !== 'undefined' && location.href)
+        ? location.href.split('#')[0] : '';
+      return socle + '#espace=' + encodeURIComponent(e.id) + '&cle=' + encodeURIComponent(e.cle) +
+        '&serveur=' + encodeURIComponent(e.serveur);
+    },
+
+    /** Lit un lien de partage. → { id, cle, serveur } ou null. */
+    lireLienPartage(lien) {
+      const texte = String(lien || '');
+      const frag = texte.indexOf('#') >= 0 ? texte.slice(texte.indexOf('#') + 1) : texte;
+      const p = new URLSearchParams(frag);
+      const id = p.get('espace'), cle = p.get('cle'), serveur = p.get('serveur');
+      if (!id || !cle || !serveur) return null;
+      return { id: id, cle: cle, serveur: String(serveur).replace(/\/+$/, '') };
+    },
+
+    /** Force un aller-retour avec le serveur. */
+    async synchroniser() { await echanger(false); return etat; },
 
     /** true si ce navigateur refuse d'écrire (navigation privée, quota, stockage bloqué). */
     modeMemoire() { return modeMemoire; },
 
     /** Branche l'interface sur les pannes de stockage. */
     surPanne(cb) { auxPannes = cb; },
+    /** L'interface reçoit la racine quand elle change à distance. */
+    surChangement(cb) { auxChangements = cb; },
+    /** L'interface reçoit l'état de la synchronisation. */
+    surEtat(cb) { auxEtat = cb; },
   };
 })();
 
@@ -1388,6 +1679,187 @@ function texteTotal(total, sansPrix) {
   const base = formatEuroFixe(total);
   if (!sansPrix) return base;
   return '≥ ' + base + ' (' + sansPrix + ' ingrédient' + (sansPrix > 1 ? 's' : '') + ' sans prix)';
+}
+
+/* ——— SYNCHRONISATION : DIFFÉRENCES ET FUSION —————————————————————————————
+   Deux personnes modifient le même espace, parfois hors ligne. Plutôt que
+   d'envoyer le document entier — où le dernier arrivé écrase tout le travail
+   de l'autre — on envoie des opérations ciblées : « tel chemin vaut telle
+   valeur ». Deux modifications sur des chemins différents se fusionnent sans
+   se marcher dessus ; sur le même chemin, la plus récente gagne.
+
+   Fonctions pures : elles ne lisent que leurs arguments.
+   ------------------------------------------------------------------------- */
+
+// Tableaux dont les entrées ont une identité : on les compare entrée par
+// entrée, pas position par position. Ajouter une recette pendant que l'autre
+// en ajoute une autre doit conserver les deux.
+const COLLECTIONS_CLEF = {
+  'ingredients': 'id',
+  'recettes': 'id',
+  'semainesTypes': 'id',
+  'semaine.selection': 'recetteId',
+  'semaine.ajoutsManuels': 'id',
+};
+
+// Valeurs traitées d'un bloc : les découper apporterait de la complexité sans
+// gain de fusion réel. Les « * » remplacent une clé d'entrée quelconque.
+const VALEURS_OPAQUES = [
+  'historique',
+  'reglages.ordreRayons',
+  'recettes.*.tags',
+  'recettes.*.lignes',
+  'ingredients.*.aliases',
+  'ingredients.*.prix',
+];
+
+function motifChemin(chemin) { return chemin.join('.'); }
+
+function estOpaque(chemin) {
+  const m = motifChemin(chemin);
+  for (let i = 0; i < VALEURS_OPAQUES.length; i++) {
+    const motif = VALEURS_OPAQUES[i];
+    if (motif === m) return true;
+    if (motif.indexOf('*') >= 0) {
+      const rx = new RegExp('^' + motif.split('.').map(function (seg) {
+        return seg === '*' ? '[^.]+' : seg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      }).join('\\.') + '$');
+      if (rx.test(m)) return true;
+    }
+  }
+  return false;
+}
+
+function clefCollection(chemin) {
+  return COLLECTIONS_CLEF[motifChemin(chemin)] || null;
+}
+
+function memeValeur(a, b) {
+  return JSON.stringify(a === undefined ? null : a) === JSON.stringify(b === undefined ? null : b);
+}
+function estObjetSimple(x) {
+  return x !== null && typeof x === 'object' && !Array.isArray(x);
+}
+
+/**
+ * Compare deux documents et en tire la liste des opérations qui font passer
+ * de l'un à l'autre.
+ * → [{ c: [chemin], v: valeur }] pour une écriture, { c, d: true } pour une
+ *   suppression.
+ */
+function differencesEnOperations(avant, apres, chemin) {
+  const base = chemin || [];
+  const ops = [];
+
+  if (estOpaque(base)) {
+    if (!memeValeur(avant, apres)) ops.push({ c: base, v: apres === undefined ? null : apres });
+    return ops;
+  }
+
+  const clef = clefCollection(base);
+  if (clef && Array.isArray(avant) && Array.isArray(apres)) {
+    const indexAvant = new Map(avant.map(function (e) { return [e[clef], e]; }));
+    const indexApres = new Map(apres.map(function (e) { return [e[clef], e]; }));
+    indexAvant.forEach(function (e, k) {
+      if (!indexApres.has(k)) ops.push({ c: base.concat(String(k)), d: true });
+    });
+    indexApres.forEach(function (e, k) {
+      const ancien = indexAvant.get(k);
+      if (ancien === undefined) { ops.push({ c: base.concat(String(k)), v: e }); return; }
+      Array.prototype.push.apply(ops, differencesEnOperations(ancien, e, base.concat(String(k))));
+    });
+    // L'ordre du tableau compte pour l'affichage : on le note à part.
+    const ordreAvant = avant.map(function (e) { return String(e[clef]); }).join('\u0000');
+    const ordreApres = apres.map(function (e) { return String(e[clef]); }).join('\u0000');
+    if (ordreAvant !== ordreApres) {
+      ops.push({ c: base.concat('__ordre'), v: apres.map(function (e) { return String(e[clef]); }) });
+    }
+    return ops;
+  }
+
+  if (estObjetSimple(avant) && estObjetSimple(apres)) {
+    const clefs = new Set(Object.keys(avant).concat(Object.keys(apres)));
+    clefs.forEach(function (k) {
+      if (!(k in apres)) { ops.push({ c: base.concat(k), d: true }); return; }
+      if (!(k in avant)) { ops.push({ c: base.concat(k), v: apres[k] }); return; }
+      Array.prototype.push.apply(ops, differencesEnOperations(avant[k], apres[k], base.concat(k)));
+    });
+    return ops;
+  }
+
+  if (!memeValeur(avant, apres)) ops.push({ c: base, v: apres === undefined ? null : apres });
+  return ops;
+}
+
+/** Applique une opération à un document. Modifie le document en place. */
+function appliquerOperation(doc, op) {
+  const chemin = op.c;
+  if (!chemin.length) return doc;
+
+  let noeud = doc;
+  for (let i = 0; i < chemin.length - 1; i++) {
+    const seg = chemin[i];
+    const clef = clefCollection(chemin.slice(0, i + 1));
+    if (clef && Array.isArray(noeud[seg])) {
+      // Le segment suivant est une clé d'entrée, pas un indice.
+      const suivant = chemin[i + 1];
+      let entree = noeud[seg].find(function (e) { return String(e[clef]) === String(suivant); });
+      if (!entree) {
+        if (i + 2 === chemin.length && op.d) return doc;   // suppression d'un absent
+        if (i + 2 === chemin.length) { noeud[seg].push(op.v); return doc; }
+        entree = {}; entree[clef] = suivant; noeud[seg].push(entree);
+      }
+      if (i + 2 === chemin.length) {
+        if (op.d) {
+          noeud[seg] = noeud[seg].filter(function (e) { return String(e[clef]) !== String(suivant); });
+        } else {
+          const idx = noeud[seg].indexOf(entree);
+          noeud[seg][idx] = op.v;
+        }
+        return doc;
+      }
+      noeud = entree;
+      i += 1;   // le segment de clé est consommé
+      continue;
+    }
+    if (noeud[seg] === undefined || noeud[seg] === null) noeud[seg] = {};
+    noeud = noeud[seg];
+  }
+
+  const dernier = chemin[chemin.length - 1];
+
+  // Réordonnancement d'une collection identifiée.
+  if (dernier === '__ordre' && Array.isArray(noeud[chemin[chemin.length - 2]])) {
+    return doc;   // traité au niveau du parent, plus bas
+  }
+  if (op.d) delete noeud[dernier];
+  else noeud[dernier] = op.v;
+  return doc;
+}
+
+/** Applique une suite d'opérations, dans l'ordre reçu. */
+function appliquerOperations(doc, operations) {
+  const ordres = [];
+  (operations || []).forEach(function (op) {
+    if (op.c[op.c.length - 1] === '__ordre') { ordres.push(op); return; }
+    appliquerOperation(doc, op);
+  });
+  // Les réordonnancements se font en dernier, une fois les entrées en place.
+  ordres.forEach(function (op) {
+    const cheminTableau = op.c.slice(0, -1);
+    const clef = clefCollection(cheminTableau);
+    if (!clef) return;
+    let noeud = doc;
+    for (let i = 0; i < cheminTableau.length - 1; i++) noeud = noeud[cheminTableau[i]];
+    const nom = cheminTableau[cheminTableau.length - 1];
+    if (!Array.isArray(noeud[nom])) return;
+    const parClef = new Map(noeud[nom].map(function (e) { return [String(e[clef]), e]; }));
+    const ordonne = [];
+    (op.v || []).forEach(function (k) { if (parClef.has(k)) { ordonne.push(parClef.get(k)); parClef.delete(k); } });
+    parClef.forEach(function (e) { ordonne.push(e); });   // entrées arrivées depuis
+    noeud[nom] = ordonne;
+  });
+  return doc;
 }
 
 /* ——— OUTILS UI ——————————————————————————————————————————————————————————
@@ -3507,6 +3979,9 @@ function vueReglages() {
     el('label', { class: 'champ', style: 'margin-top:.5rem' }, [el('span', { text: 'Thème' }), selTheme]),
   ]));
 
+  /* Partage et synchronisation */
+  v.appendChild(carteSynchronisation());
+
   /* Sauvegarde */
   v.appendChild(el('div', { class: 'carte' }, [
     el('h2', { text: 'Sauvegarde de vos données' }),
@@ -3820,6 +4295,264 @@ async function effacerTout() {
   toast('Toutes les données ont été effacées.');
 }
 
+/* ——— PARTAGE ET SYNCHRONISATION —————————————————————————————————————————
+   L'application ne connaît du réseau que ce que Store lui en dit : un état,
+   un nom d'espace, et une racine qui change parfois toute seule.
+   ------------------------------------------------------------------------- */
+
+const ETAT_LIBELLE = {
+  local: 'Cet appareil',
+  synchronise: 'Synchronisé',
+  envoi: 'Envoi…',
+  horsligne: 'Hors ligne',
+  erreur: 'Synchro en échec',
+};
+
+let infosEspaces = { courant: null, espaces: [], etat: 'local', enAttente: 0 };
+
+async function rafraichirEtatEspaces() {
+  infosEspaces = await Store.espaces();
+  // L'état de synchronisation peut changer avant que les données soient
+  // chargées : rien à peindre tant qu'il n'y a pas de document.
+  if (!D) return;
+  const bouton = $('#bouton-espace');
+  const pastille = $('#pastille-sync');
+  const nom = $('#nom-espace');
+  if (!bouton) return;
+
+  const courant = infosEspaces.espaces.find(function (e) { return e.id === infosEspaces.courant; });
+  // Sans espace ni serveur configuré, le bouton ne sert à rien : on le cache.
+  bouton.hidden = !courant && !infosEspaces.espaces.length && !D.reglages.serveurSync;
+  pastille.className = 'pastille ' + infosEspaces.etat;
+  nom.textContent = courant ? courant.nom : 'Cet appareil';
+  bouton.title = courant
+    ? (ETAT_LIBELLE[infosEspaces.etat] || '') + (infosEspaces.enAttente ? ' · ' + infosEspaces.enAttente + ' en attente' : '')
+    : 'Données de cet appareil seulement';
+}
+
+function ouvrirSelecteurEspaces() {
+  const corps = [];
+  const liste = el('div');
+
+  const ligne = function (titre, sousTitre, actuel, surChoix, surQuitter) {
+    const l = el('div', { class: 'ligne-espace' }, [
+      el('div', { class: 'nom' }, [
+        el('div', { class: actuel ? 'actuel' : '', text: titre }),
+        el('div', { class: 'tpt doux', text: sousTitre }),
+      ]),
+    ]);
+    if (!actuel) l.appendChild(el('button', { type: 'button', class: 'btn mini principal', text: 'Ouvrir', onclick: surChoix }));
+    if (surQuitter) l.appendChild(el('button', { type: 'button', class: 'btn mini fantome', text: '✕', 'aria-label': 'Retirer de cet appareil', onclick: surQuitter }));
+    return l;
+  };
+
+  liste.appendChild(ligne('Cet appareil', 'Données locales, non partagées', !infosEspaces.courant,
+    async function () { fermerModale(); await basculerEspace(null); }, null));
+
+  infosEspaces.espaces.forEach(function (e) {
+    liste.appendChild(ligne(e.nom, e.serveur.replace(/^https?:\/\//, ''), e.id === infosEspaces.courant,
+      async function () { fermerModale(); await basculerEspace(e.id); },
+      async function () {
+        fermerModale();
+        const ok = await confirmer({
+          titre: 'Retirer « ' + e.nom +' » de cet appareil',
+          message: 'L\'espace et son contenu restent sur le serveur, et sur les autres appareils. Vous pourrez y revenir avec le lien de partage.',
+          labelOk: 'Retirer', danger: true,
+        });
+        if (!ok) return;
+        D = await Store.quitterEspace(e.id) || donneesExemple();
+        await rafraichirEtatEspaces();
+        rendre();
+        toast('« ' + e.nom + ' » retiré de cet appareil.');
+      }));
+  });
+  corps.push(liste);
+
+  const actions = [{ label: 'Fermer', onClick: function (f) { f(); } }];
+  if (infosEspaces.courant) {
+    actions.push({ label: 'Lien de partage', onClick: function (f) { f(); montrerLienPartage(); } });
+  }
+  actions.push({ label: 'Gérer', variant: 'principal', onClick: function (f) { f(); allerA('reglages'); } });
+  ouvrirModale({ titre: 'Espaces', corps: corps, actions: actions });
+}
+
+async function basculerEspace(id) {
+  const nouvelle = await Store.changerEspace(id);
+  D = nouvelle || donneesExemple();
+  if (!nouvelle) await Store.save(D);
+  etat.editionRecette = null; etat.editeurDom = null;
+  await rafraichirEtatEspaces();
+  appliquerTheme();
+  allerA('semaine');
+}
+
+function montrerLienPartage() {
+  const lien = Store.lienPartage();
+  if (!lien) { toast('Aucun espace partagé ouvert.'); return; }
+  const zone = el('textarea', { rows: '4', readonly: true, style: 'font-size:.85rem' });
+  zone.value = lien;
+  ouvrirModale({
+    titre: 'Lien de partage',
+    corps: [
+      el('div', { class: 'avert', text: 'Ce lien contient la clé de l\'espace : qui l\'a peut tout voir et tout modifier. Ne le diffusez qu\'aux personnes concernées.' }),
+      zone,
+    ],
+    actions: [
+      { label: 'Fermer', onClick: function (f) { f(); } },
+      { label: 'Copier', variant: 'principal', onClick: async function () {
+        let ok = false;
+        try { if (navigator.clipboard) { await navigator.clipboard.writeText(lien); ok = true; } } catch (e) { ok = false; }
+        if (!ok) { zone.focus(); zone.select(); toast('Copiez le lien sélectionné.'); }
+        else toast('Lien copié.');
+      } },
+    ],
+  });
+  setTimeout(function () { zone.focus(); zone.select(); }, 60);
+}
+
+/** Un lien de partage dans l'adresse : on propose de rejoindre l'espace. */
+async function traiterLienEntrant() {
+  if (typeof location === 'undefined' || !location.hash) return false;
+  const infos = Store.lireLienPartage(location.hash);
+  if (!infos) return false;
+  history.replaceState(null, '', location.pathname + location.search);
+
+  if (infosEspaces.espaces.some(function (e) { return e.id === infos.id; })) {
+    await basculerEspace(infos.id);
+    toast('Espace déjà connu : ouvert.');
+    return true;
+  }
+  const ok = await confirmer({
+    titre: 'Rejoindre un espace partagé',
+    message: 'Ce lien ouvre un espace hébergé sur ' + infos.serveur.replace(/^https?:\/\//, '') +
+      '. Vos données locales actuelles ne sont pas touchées : elles restent accessibles sous « Cet appareil ».',
+    labelOk: 'Rejoindre',
+  });
+  if (!ok) return false;
+  try {
+    D = await Store.rejoindreEspace(location.hash || infos);
+  } catch (e) {
+    try { D = await Store.rejoindreEspace(infos); }
+    catch (e2) { toast(e2.message || 'Impossible de rejoindre cet espace.'); return false; }
+  }
+  await rafraichirEtatEspaces();
+  appliquerTheme();
+  allerA('semaine');
+  toast('Espace rejoint.');
+  return true;
+}
+
+/* --- Écran de réglages : la carte « Partage » --- */
+
+function carteSynchronisation() {
+  const carte = el('div', { class: 'carte' });
+  carte.appendChild(el('h2', { text: 'Partage et synchronisation' }));
+
+  const courant = infosEspaces.espaces.find(function (e) { return e.id === infosEspaces.courant; });
+  carte.appendChild(el('p', { class: 'pt' }, [
+    el('span', { class: 'pastille ' + infosEspaces.etat, style: 'display:inline-block;margin-right:.4rem' }),
+    el('span', { text: courant
+      ? 'Espace « ' + courant.nom + ' » — ' + (ETAT_LIBELLE[infosEspaces.etat] || '').toLowerCase() +
+        (infosEspaces.enAttente ? ' (' + infosEspaces.enAttente + ' modification' + (infosEspaces.enAttente > 1 ? 's' : '') + ' en attente)' : '')
+      : 'Les données restent sur cet appareil. Rien n\'est envoyé nulle part.' }),
+  ]));
+
+  const champServeur = el('input', {
+    type: 'url', placeholder: 'https://mon-serveur.exemple', value: D.reglages.serveurSync || '',
+    'aria-label': 'Adresse du serveur de synchronisation',
+  });
+  champServeur.addEventListener('change', async function () {
+    D.reglages.serveurSync = champServeur.value.trim().replace(/\/+$/, '') || '';
+    await sauvegarder();
+    await rafraichirEtatEspaces();
+  });
+  carte.appendChild(el('label', { class: 'champ' }, [
+    el('span', { text: 'Serveur de synchronisation' }), champServeur,
+    el('span', { class: 'tpt doux', text: 'Adresse de votre serveur. Voir serveur/LISEZMOI.md dans le dépôt.' }),
+  ]));
+
+  const actions = el('div', { class: 'barre-actions' });
+  actions.appendChild(el('button', {
+    type: 'button', class: 'btn principal', text: '＋ Créer un espace partagé',
+    onclick: creerEspacePartage,
+  }));
+  actions.appendChild(el('button', {
+    type: 'button', class: 'btn', text: '⇥ Rejoindre avec un lien', onclick: rejoindreParLien,
+  }));
+  if (courant) {
+    actions.appendChild(el('button', { type: 'button', class: 'btn', text: '🔗 Lien de partage', onclick: montrerLienPartage }));
+    actions.appendChild(el('button', { type: 'button', class: 'btn', text: '↻ Synchroniser', onclick: async function () {
+      await Store.synchroniser(); await rafraichirEtatEspaces(); rendre(); toast('Synchronisation demandée.');
+    } }));
+  }
+  if (infosEspaces.espaces.length) {
+    actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Changer d\'espace', onclick: ouvrirSelecteurEspaces }));
+  }
+  carte.appendChild(actions);
+
+  carte.appendChild(el('p', { class: 'tpt doux', style: 'margin-top:.5rem', text:
+    'Un espace partagé n\'a pas de compte : le lien fait office de clé. Qui l\'a peut tout voir et tout modifier. ' +
+    'Chaque espace est indépendant — ses recettes, sa liste et son historique lui appartiennent.' }));
+  return carte;
+}
+
+function creerEspacePartage() {
+  const serveur = (D.reglages.serveurSync || '').trim();
+  if (!serveur) { toast('Renseignez d\'abord l\'adresse du serveur.'); return; }
+  const champ = el('input', { type: 'text', placeholder: 'Coloc, Famille, Perso…', value: '' });
+  ouvrirModale({
+    titre: 'Créer un espace partagé',
+    corps: [
+      el('label', { class: 'champ' }, [el('span', { text: 'Nom de l\'espace' }), champ]),
+      el('p', { class: 'pt doux', text: 'Les données affichées en ce moment y seront déposées. Vous obtiendrez un lien à transmettre.' }),
+    ],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      {
+        label: 'Créer', variant: 'principal',
+        onClick: async function (f) {
+          const nom = champ.value.trim() || 'Mon espace';
+          f();
+          try {
+            await Store.creerEspace(nom, serveur, D);
+          } catch (e) { toast(e.message || 'Création impossible.'); return; }
+          await rafraichirEtatEspaces();
+          rendre();
+          montrerLienPartage();
+        },
+      },
+    ],
+  });
+}
+
+function rejoindreParLien() {
+  const champ = el('textarea', { rows: '3', placeholder: 'Collez ici le lien reçu' });
+  ouvrirModale({
+    titre: 'Rejoindre un espace',
+    corps: [
+      el('label', { class: 'champ' }, [el('span', { text: 'Lien de partage' }), champ]),
+      el('p', { class: 'pt doux', text: 'Vos données locales ne sont pas touchées : elles restent sous « Cet appareil ».' }),
+    ],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      {
+        label: 'Rejoindre', variant: 'principal',
+        onClick: async function (f) {
+          const lien = champ.value.trim();
+          if (!lien) { champ.focus(); return; }
+          f();
+          try { D = await Store.rejoindreEspace(lien); }
+          catch (e) { toast(e.message || 'Impossible de rejoindre cet espace.'); return; }
+          await rafraichirEtatEspaces();
+          appliquerTheme();
+          allerA('semaine');
+          toast('Espace rejoint.');
+        },
+      },
+    ],
+  });
+}
+
 /* ——— DÉMARRAGE ——————————————————————————————————————————————————————————— */
 
 /**
@@ -3883,6 +4616,15 @@ function signalerModeDegrade() {
 async function demarrer() {
   Store.surPanne(function () { signalerModeDegrade(); });
 
+  // Une modification venue d'un autre appareil remplace la racine : on adopte
+  // la nouvelle et on redessine, sans rien perdre de ce qui est en cours.
+  Store.surChangement(function (nouvelle) {
+    D = nouvelle;
+    rafraichirEtatEspaces();
+    rendre();
+  });
+  Store.surEtat(function () { rafraichirEtatEspaces(); });
+
   let chargees = null;
   try { chargees = await Store.load(); }
   catch (e) { chargees = null; }
@@ -3901,6 +4643,8 @@ async function demarrer() {
   $$('#tabbar button').forEach(function (b) {
     b.addEventListener('click', function () { allerA(b.dataset.tab); });
   });
+  $('#bouton-espace').addEventListener('click', ouvrirSelecteurEspaces);
+  await rafraichirEtatEspaces();
 
   // Hauteur réelle de la barre de titre, pour que l'en-tête de la liste se cale
   // juste dessous au lieu de disparaître derrière.
@@ -3918,6 +4662,15 @@ async function demarrer() {
   document.body.appendChild(dl);
 
   allerA('semaine');
+
+  // Un lien de partage dans l'adresse : on propose de rejoindre l'espace.
+  await traiterLienEntrant();
+
+  // De retour sur l'onglet, on rattrape ce qui s'est passé pendant l'absence.
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') Store.synchroniser();
+  });
+  window.addEventListener('online', function () { Store.synchroniser(); });
 
   // On force l'écriture en attente avant que l'onglet ne disparaisse.
   const vider = function () { Store.flush(); };
