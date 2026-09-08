@@ -194,16 +194,41 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 /* ——— SEMAINE ——— */
 .grille-recettes{ display:grid; gap:.6rem; grid-template-columns:1fr; }
 @media (min-width:640px){ .grille-recettes{ grid-template-columns:1fr 1fr; } }
-.carte-recette{ display:flex; gap:.6rem; align-items:flex-start; }
-.carte-recette .infos{ flex:1; min-width:0; }
-.carte-recette .meta{ font-size:.8rem; color:var(--texte-doux); display:flex; flex-wrap:wrap; gap:.35rem; margin-top:.15rem; }
+.carte-recette{ display:block; }
+.carte-recette .entete-carte{ display:flex; align-items:center; gap:.5rem; }
+.carte-recette .infos{ flex:1 1 auto; min-width:0; }
 .carte-recette.selectionnee{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
 .stepper{ display:inline-flex; align-items:center; border:1px solid var(--border-fort); border-radius:999px; overflow:hidden; background:var(--surface); }
 .stepper button{ border:0; background:none; color:var(--texte); font:inherit; font-size:1.15rem; font-weight:700;
   width:var(--tap); height:var(--tap); cursor:pointer; line-height:1; }
 .stepper button:hover{ background:var(--bg-alt); }
 .stepper .valeur{ min-width:62px; text-align:center; font-size:.85rem; font-weight:650; padding:0 .2rem; }
-.recap{ position:sticky; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:20; }
+.recap{ position:sticky; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:20; padding:.5rem .6rem; }
+.recap .ligne-resume{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
+.recap .bascule{ flex:1 1 180px; min-width:0; display:flex; align-items:center; gap:.4rem;
+  background:none; border:0; padding:.2rem 0; min-height:40px; cursor:pointer;
+  font:inherit; font-weight:650; font-size:.95rem; color:var(--texte); text-align:left; }
+.recap .resume{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
+.recap .resume .cout{ color:var(--accent); }
+.recap .chevron{ flex:0 0 auto; color:var(--texte-doux); transition:transform 120ms ease; }
+.recap .bascule[aria-expanded="true"] .chevron{ transform:rotate(180deg); }
+.recap .actions-recap{ flex:0 0 auto; min-height:40px; }
+.recap .detail[hidden]{ display:none; }
+.recap .detail{ border-top:1px solid var(--border); margin-top:.4rem; padding-top:.4rem; }
+.recap .detail ul{ margin:.1rem 0 .4rem; padding-left:1.1rem; font-size:.9rem; }
+.recap .actions-recap{ margin-top:.45rem; }
+/* Une recette déjà retenue doit se faire discrète, pas prendre plus de place. */
+.carte-recette{ padding:.55rem .6rem; }
+.carte-recette .meta{ font-size:.8rem; color:var(--texte-doux); display:flex; flex-wrap:wrap;
+  gap:.3rem; align-items:center; margin-top:.1rem; }
+.carte-recette .faits{ overflow-wrap:anywhere; }
+.carte-recette .actions-carte{ display:flex; align-items:center; gap:.15rem; flex:0 0 auto; }
+.carte-recette .retirer{ width:32px; height:32px; min-height:0; padding:0; border-radius:8px;
+  font-size:1rem; line-height:1; color:var(--texte-doux); }
+.carte-recette .retirer:hover{ color:var(--danger); }
+.carte-recette .ajouter{ min-height:36px; width:46px; padding:0; }
+.stepper.compact button{ width:36px; height:36px; font-size:1.05rem; }
+.stepper.compact .valeur{ min-width:28px; font-size:.9rem; }
 .barre-portions{
   display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
   background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
@@ -282,6 +307,7 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
   border:1px solid var(--border); border-radius:8px; padding:.45rem; background:var(--surface-2); }
 @media (min-width:560px){
   .ligne-ing{ grid-template-columns: minmax(0,1fr) 92px 110px auto auto; align-items:center; }
+  .ligne-ing .zone-fixe .btn.mini{ padding:.2rem .3rem; }
 }
 .ligne-ing .zone-fixe{ display:flex; align-items:center; }
 .editeur{ display:grid; gap:0 .6rem; grid-template-columns:1fr; align-items:start; }
@@ -908,6 +934,15 @@ function formatNombre(n, maxDec) {
   if (s.indexOf('.') >= 0) s = s.replace(/0+$/, '').replace(/\.$/, '');
   return s.replace('.', ',');
 }
+/** Lit un nombre saisi à la française : « 1,5 » → 1.5. Inverse de formatNombre. */
+function parseNombre(txt) {
+  if (txt === null || txt === undefined) return null;
+  const s = String(txt).trim().replace(',', '.').replace(/\s/g, '');
+  if (s === '') return null;
+  const n = Number(s);
+  return isFinite(n) ? n : null;
+}
+
 function formatEuroFixe(n) {
   if (typeof n !== 'number' || !isFinite(n)) return '—';
   return n.toFixed(2).replace('.', ',') + ' €';
@@ -1259,6 +1294,49 @@ function filtrerRecettes(donnees, criteres) {
   return resultat;
 }
 
+/** Ingrédients qu'aucune recette n'utilise. Fonction pure. */
+function ingredientsInutilises(donnees) {
+  const utilises = new Set();
+  donnees.recettes.forEach(function (r) {
+    r.lignes.forEach(function (l) { utilises.add(l.ingredientId); });
+  });
+  return donnees.ingredients.filter(function (i) { return !utilises.has(i.id); });
+}
+
+/**
+ * Cases à cocher débarrassées de celles qui ne correspondent plus à un article
+ * de la liste. Sans ça, retirer une recette puis la remettre ferait réapparaître
+ * ses ingrédients déjà cochés — et on ne les achèterait pas.
+ */
+function cochesNettoyees(donnees) {
+  const valides = new Set();
+  agregerSelection(donnees, donnees.semaine.selection).lignes.forEach(function (l) {
+    valides.add(l.ingredient.id);
+  });
+  (donnees.semaine.ajoutsManuels || []).forEach(function (m) { valides.add(m.id); });
+  const propres = {};
+  const coches = donnees.semaine.coches || {};
+  Object.keys(coches).forEach(function (cle) {
+    if (coches[cle] && valides.has(cle)) propres[cle] = true;
+  });
+  return propres;
+}
+
+/**
+ * Lit une quantité saisie librement : « 6 » → 6, « 2 kg » → 2 kg,
+ * « 1,5 L » → 1,5 L, « du café » → rien. Sert aux articles ajoutés à la main,
+ * dont le rayon et le nom suffisent souvent mais pas toujours.
+ */
+function analyserQuantiteLibre(texte) {
+  const t = String(texte || '').trim();
+  if (!t) return { quantite: null, unite: null };
+  const m = t.match(/^(-?[\d]+(?:[.,][\d]+)?)\s*(.*)$/);
+  if (!m) return { quantite: null, unite: t };
+  const n = parseNombre(m[1]);
+  const reste = m[2].trim();
+  return { quantite: n, unite: reste || null };
+}
+
 /**
  * Recettes que le filtre chaud/froid écarte uniquement parce qu'elles ne sont
  * pas classées — elles satisfont tous les autres critères.
@@ -1332,13 +1410,6 @@ function el(tag, attrs, enfants) {
   });
   return n;
 }
-function parseNombre(txt) {
-  if (txt === null || txt === undefined) return null;
-  const s = String(txt).trim().replace(',', '.').replace(/\s/g, '');
-  if (s === '') return null;
-  const n = Number(s);
-  return isFinite(n) ? n : null;
-}
 
 /* --- Toasts et bandeau d'annulation (5 s) --- */
 function toast(message, options) {
@@ -1393,8 +1464,22 @@ function ouvrirModale(cfg) {
   if ((cfg.actions || []).length) boite.appendChild(actions);
   const fond = el('div', { class: 'fond-modal' }, [boite]);
   fond.addEventListener('mousedown', function (ev) { if (ev.target === fond && cfg.fermetureExterieure !== false) fermerModale(); });
+  // Tant que la fenêtre est ouverte, la tabulation tourne en boucle dedans.
+  // Sans ça, le curseur passe derrière le voile gris et on peut déclencher,
+  // sans le voir, un bouton de l'écran du dessous.
+  function focalisables() {
+    return $$('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])', boite)
+      .filter(function (n) { return !n.disabled && n.offsetParent !== null; });
+  }
   const onKey = function (ev) {
-    if (ev.key === 'Escape') { ev.stopPropagation(); fermerModale(); if (cfg.onAnnule) cfg.onAnnule(); }
+    if (ev.key === 'Escape') { ev.stopPropagation(); fermerModale(); if (cfg.onAnnule) cfg.onAnnule(); return; }
+    if (ev.key !== 'Tab') return;
+    const liste = focalisables();
+    if (!liste.length) { ev.preventDefault(); return; }
+    const premier = liste[0], dernier = liste[liste.length - 1];
+    const dedans = boite.contains(document.activeElement);
+    if (ev.shiftKey && (!dedans || document.activeElement === premier)) { ev.preventDefault(); dernier.focus(); }
+    else if (!ev.shiftKey && (!dedans || document.activeElement === dernier)) { ev.preventDefault(); premier.focus(); }
   };
   document.addEventListener('keydown', onKey, true);
   $('#racine-modale').appendChild(fond);
@@ -1555,17 +1640,22 @@ const etat = {
   tagFiltre: '',
   filtreTempsMax: 0,               // minutes, 0 = pas de limite
   filtreTemperature: '',           // '' | 'chaud' | 'froid'
+  baseSaisie: 1,                   // portions dans lesquelles on saisit une recette
   rechercheIngredients: '',
   triRef: { colonne: 'nom', sens: 1 },
   editionRecette: null,            // { recette, nouvelle }
   rayonsOuverts: {},               // surcharge manuelle du pliage des rayons
   rayonsToutCoches: {},            // dernier état connu, pour réarmer le pliage auto
   provenanceOuverte: null,
+  recapOuvert: false,              // détail du récapitulatif de la semaine
   placardOuvert: false,
   ecranAllume: false,
 };
 
 async function sauvegarder() {
+  // Point de passage unique : on en profite pour ne jamais laisser traîner de
+  // case cochée sur un article qui a quitté la liste.
+  D.semaine.coches = cochesNettoyees(D);
   D.semaine.dateModification = new Date().toISOString();
   await Store.save(D);
 }
@@ -1967,13 +2057,16 @@ function vueSemaine() {
       const c = coutRecette(D, r, sel ? sel.portions : D.reglages.portionsBase);
       const fraicheur = texteFraicheur(r.derniereUtilisation);
 
-      const meta = el('div', { class: 'meta' });
-      if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
-      if (r.temperature) meta.appendChild(el('span', { class: 'puce', text: TEMPERATURE_LIBELLE[r.temperature] }));
-      r.tags.forEach(function (tag) { meta.appendChild(el('span', { class: 'puce', text: tag })); });
-      if (afficherPrix() && c.total > 0) {
-        meta.appendChild(el('span', { class: 'puce', text: formatEuroFixe(c.parPortion) + ' / portion' }));
-      }
+      // Les faits sur une ligne de texte discret ; les puces sont réservées aux
+      // signaux, qui doivent sauter aux yeux.
+      const faits = [];
+      if (r.tempsPreparationMin) faits.push(r.tempsPreparationMin + ' min');
+      if (r.temperature) faits.push(TEMPERATURE_LIBELLE[r.temperature]);
+      if (r.tags.length) faits.push(r.tags.join(', '));
+      if (afficherPrix() && c.total > 0) faits.push(formatEuroFixe(c.parPortion) + ' / portion');
+      const meta = el('div', { class: 'meta' }, [
+        faits.length ? el('span', { class: 'faits', text: faits.join(' · ') }) : null,
+      ]);
       if (fraicheur) meta.appendChild(el('span', { class: 'puce alerte', text: fraicheur }));
       // On dit pourquoi la recette ressort quand c'est un ingrédient qui a fait mouche.
       if (t.ingredientsTrouves.length) {
@@ -1988,19 +2081,21 @@ function vueSemaine() {
       nom.addEventListener('click', function () { apercuRecette(r); });
 
       const action = sel
-        ? el('div', { style: 'display:flex;flex-direction:column;gap:.3rem;align-items:flex-end' }, [
-            el('div', { class: 'stepper' }, [
-              el('button', { type: 'button', text: '−', 'aria-label': 'Moins de portions', onclick: function () { changerPortions(r.id, -1); } }),
-              el('span', { class: 'valeur', text: sel.portions + ' port.' }),
-              el('button', { type: 'button', text: '+', 'aria-label': 'Plus de portions', onclick: function () { changerPortions(r.id, 1); } }),
+        ? el('div', { class: 'actions-carte' }, [
+            el('div', { class: 'stepper compact' }, [
+              el('button', { type: 'button', text: '−', 'aria-label': 'Moins de portions pour ' + r.nom, onclick: function () { changerPortions(r.id, -1); } }),
+              el('span', { class: 'valeur', text: String(sel.portions) }),
+              el('button', { type: 'button', text: '+', 'aria-label': 'Plus de portions pour ' + r.nom, onclick: function () { changerPortions(r.id, 1); } }),
             ]),
-            el('button', { type: 'button', class: 'btn mini fantome', text: 'Retirer', onclick: function () { retirerDeSemaine(r.id); } }),
+            el('button', { type: 'button', class: 'btn mini fantome retirer', text: '✕',
+              'aria-label': 'Retirer ' + r.nom + ' de la semaine', title: 'Retirer de la semaine',
+              onclick: function () { retirerDeSemaine(r.id); } }),
           ])
-        : el('button', { type: 'button', class: 'btn principal', style: 'min-width:44px', text: '+', 'aria-label': 'Ajouter ' + r.nom + ' à la semaine', onclick: function () { ajouterASemaine(r); } });
+        : el('button', { type: 'button', class: 'btn principal ajouter', text: '+', 'aria-label': 'Ajouter ' + r.nom + ' à la semaine', onclick: function () { ajouterASemaine(r); } });
 
       grille.appendChild(el('div', { class: 'carte carte-recette' + (sel ? ' selectionnee' : '') }, [
-        el('div', { class: 'infos' }, [nom, meta]),
-        action,
+        el('div', { class: 'entete-carte' }, [el('div', { class: 'infos' }, [nom]), action]),
+        meta,
       ]));
     });
   }
@@ -2008,32 +2103,54 @@ function vueSemaine() {
   function remplirRecap() {
     recap.innerHTML = '';
     const sel = D.semaine.selection;
-    const totalPortions = sel.reduce(function (a, s) { return a + s.portions; }, 0);
-    const c = coutSelection(D, sel);
-    recap.appendChild(el('h2', { text: 'Ma semaine' }));
+
     if (!sel.length) {
-      recap.appendChild(el('p', { class: 'doux', text: 'Aucune recette retenue. Ajoutez-en avec le bouton « + ».' }));
+      recap.appendChild(el('p', { class: 'doux', style: 'margin:.3rem 0', text: 'Ma semaine est vide — ajoutez des recettes avec « + ».' }));
       return;
     }
-    const ul = el('ul', { class: 'pt', style: 'margin:.2rem 0 .5rem;padding-left:1.1rem' });
+
+    const totalPortions = sel.reduce(function (a, s) { return a + s.portions; }, 0);
+    const c = coutSelection(D, sel);
+
+    // Une ligne suffit à savoir où on en est ; le détail se déplie à la demande,
+    // et « Générer la liste » reste atteignable dans les deux états.
+    const resume = el('span', { class: 'resume' }, [
+      el('span', { text: sel.length + ' recette' + (sel.length > 1 ? 's' : '') + ' · ' + totalPortions + ' portions' }),
+    ]);
+    if (afficherPrix()) {
+      resume.appendChild(el('span', { text: ' · ' }));
+      resume.appendChild(el('span', { class: 'cout', text: texteTotal(c.total, c.sansPrix) }));
+    }
+
+    const detail = el('div', { class: 'detail', id: 'detail-semaine', hidden: !etat.recapOuvert });
+    const ul = el('ul');
     sel.forEach(function (s) {
       const r = recetteParId(s.recetteId);
       if (r) ul.appendChild(el('li', { text: r.nom + ' — ' + s.portions + ' portions' }));
     });
-    recap.appendChild(ul);
-    recap.appendChild(el('div', { class: 'barre-actions', style: 'align-items:center;margin-bottom:.5rem' }, [
-      el('span', { class: 'puce accent', text: sel.length + ' recette' + (sel.length > 1 ? 's' : '') }),
-      el('span', { class: 'puce accent', text: totalPortions + ' portions' }),
-      afficherPrix() ? el('span', { class: 'puce accent', text: texteTotal(c.total, c.sansPrix) }) : null,
-    ]));
+    detail.appendChild(ul);
     if (afficherPrix()) {
       const evo = evolutionCout(c.total);
-      if (evo) recap.appendChild(el('p', { class: 'tpt doux', text: evo }));
+      if (evo) detail.appendChild(el('p', { class: 'tpt doux', style: 'margin:0', text: evo }));
     }
-    recap.appendChild(el('button', {
-      type: 'button', class: 'btn principal', style: 'width:100%', text: 'Générer la liste',
-      onclick: function () { allerA('liste'); },
-    }));
+
+    const bascule = el('button', {
+      type: 'button', class: 'bascule', 'aria-expanded': String(!!etat.recapOuvert), 'aria-controls': 'detail-semaine',
+    }, [resume, el('span', { class: 'chevron', 'aria-hidden': 'true', text: '⌃' })]);
+    bascule.addEventListener('click', function () {
+      etat.recapOuvert = !etat.recapOuvert;
+      detail.hidden = !etat.recapOuvert;
+      bascule.setAttribute('aria-expanded', String(etat.recapOuvert));
+    });
+
+    recap.appendChild(el('div', { class: 'ligne-resume' }, [
+      bascule,
+      el('button', {
+        type: 'button', class: 'btn principal actions-recap', text: 'Générer la liste',
+        onclick: function () { allerA('liste'); },
+      }),
+    ]));
+    recap.appendChild(detail);
   }
 
   remplirCartes();
@@ -2416,25 +2533,33 @@ function vueListe() {
   }
 
   // Ajout manuel en un champ
-  const champManuel = el('input', { type: 'text', placeholder: 'Ajouter un article (papier toilette, café…)', 'aria-label': 'Ajouter un article' });
-  const selectRayonManuel = el('select', { 'aria-label': 'Rayon de l\'article', style: 'flex:0 1 190px' });
+  const champManuel = el('input', { type: 'text', placeholder: 'Ajouter un article (papier toilette, café…)', 'aria-label': 'Nom de l\'article' });
+  const champQteManuel = el('input', { type: 'text', placeholder: 'qté', 'aria-label': 'Quantité (facultative), par exemple 6 ou 2 kg', style: 'flex:0 1 96px' });
+  const selectRayonManuel = el('select', { 'aria-label': 'Rayon de l\'article', style: 'flex:0 1 170px' });
   D.reglages.ordreRayons.forEach(function (r) {
     selectRayonManuel.appendChild(el('option', { value: r, text: RAYON_LIBELLE[r], selected: r === 'autre' }));
   });
   const ajouter = async function () {
     const nom = champManuel.value.trim();
     if (!nom) return;
-    D.semaine.ajoutsManuels.push({ id: 'man_' + slug(nom) + '_' + suffixeCourt(), nom: nom, rayon: selectRayonManuel.value, quantite: null, unite: null });
+    const q = analyserQuantiteLibre(champQteManuel.value);
+    D.semaine.ajoutsManuels.push({
+      id: 'man_' + slug(nom) + '_' + suffixeCourt(), nom: nom, rayon: selectRayonManuel.value,
+      quantite: q.quantite, unite: q.unite,
+    });
     champManuel.value = '';
+    champQteManuel.value = '';
     await sauvegarder();
     vueListe();
     const c = $('#vue-liste .ajout-manuel input');
     if (c) c.focus();
   };
-  champManuel.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ajouter(); } });
+  const surEntree = function (ev) { if (ev.key === 'Enter') { ev.preventDefault(); ajouter(); } };
+  champManuel.addEventListener('keydown', surEntree);
+  champQteManuel.addEventListener('keydown', surEntree);
   v.appendChild(el('div', { class: 'carte' }, [
     el('div', { class: 'ajout-manuel' }, [
-      champManuel, selectRayonManuel,
+      champManuel, champQteManuel, selectRayonManuel,
       el('button', { type: 'button', class: 'btn principal', text: 'Ajouter', onclick: ajouter }),
     ]),
   ]));
@@ -2489,19 +2614,10 @@ function ligneArticle(a) {
   if (etat.provenanceOuverte === a.cle) {
     const detail = el('div', { class: 'detail-provenance' });
     if (a.type === 'manuel') {
-      detail.appendChild(el('div', { text: 'Article ajouté à la main.' }));
+      detail.appendChild(el('div', { text: 'Article ajouté à la main — rayon : ' + RAYON_LIBELLE[a.rayon] + '.' }));
       detail.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.4rem' }, [
-        el('button', { type: 'button', class: 'btn mini danger', text: 'Supprimer', onclick: async function () {
-          const idx = D.semaine.ajoutsManuels.findIndex(function (m) { return m.id === a.cle; });
-          if (idx < 0) return;
-          const copie = D.semaine.ajoutsManuels[idx];
-          D.semaine.ajoutsManuels.splice(idx, 1);
-          delete D.semaine.coches[a.cle];
-          await sauvegarder(); vueListe();
-          supprimerAvecAnnulation(copie.nom, async function () {
-            D.semaine.ajoutsManuels.splice(idx, 0, copie); await sauvegarder(); vueListe();
-          });
-        } }),
+        el('button', { type: 'button', class: 'btn mini', text: '✎ Modifier', onclick: function () { modifierArticleManuel(a.manuel); } }),
+        el('button', { type: 'button', class: 'btn mini danger', text: 'Supprimer', onclick: function () { supprimerArticleManuel(a.cle); } }),
       ]));
     } else {
       const entete = el('div', { class: 'gras', text: a.texteQuantite + ' — ' + a.provenance.map(function (p) {
@@ -2538,6 +2654,59 @@ function ligneArticle(a) {
     return enveloppe;
   }
   return ligne;
+}
+
+/** Un article ajouté à la main se corrige, il ne se resaisit pas. */
+function modifierArticleManuel(article) {
+  const champNom = el('input', { type: 'text', value: article.nom });
+  const champQte = el('input', { type: 'text', inputmode: 'decimal',
+    value: (typeof article.quantite === 'number') ? formatNombre(article.quantite, 3) : '' , placeholder: 'ex. 6' });
+  const champUnite = el('input', { type: 'text', value: article.unite || '', placeholder: 'ex. bouteilles' });
+  const champRayon = el('select');
+  D.reglages.ordreRayons.forEach(function (r) {
+    champRayon.appendChild(el('option', { value: r, text: RAYON_LIBELLE[r], selected: article.rayon === r }));
+  });
+  ouvrirModale({
+    titre: 'Modifier l\'article',
+    corps: [
+      el('label', { class: 'champ' }, [el('span', { text: 'Nom' }), champNom]),
+      el('div', { class: 'ligne-champs' }, [
+        el('label', { class: 'champ' }, [el('span', { text: 'Quantité' }), champQte]),
+        el('label', { class: 'champ' }, [el('span', { text: 'Unité' }), champUnite]),
+      ]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Rayon' }), champRayon]),
+    ],
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      { label: 'Supprimer', variant: 'danger', onClick: function (f) { f(); supprimerArticleManuel(article.id); } },
+      {
+        label: 'Enregistrer', variant: 'principal',
+        onClick: async function (f) {
+          const nom = champNom.value.trim();
+          if (!nom) { champNom.focus(); toast('Un nom est nécessaire.'); return; }
+          article.nom = nom;
+          article.quantite = parseNombre(champQte.value);
+          article.unite = champUnite.value.trim() || null;
+          article.rayon = champRayon.value;
+          await sauvegarder();
+          f(); vueListe();
+        },
+      },
+    ],
+  });
+}
+
+async function supprimerArticleManuel(cle) {
+  const idx = D.semaine.ajoutsManuels.findIndex(function (m) { return m.id === cle; });
+  if (idx < 0) return;
+  const copie = D.semaine.ajoutsManuels[idx];
+  D.semaine.ajoutsManuels.splice(idx, 1);
+  await sauvegarder();
+  vueListe();
+  supprimerAvecAnnulation(copie.nom, async function () {
+    D.semaine.ajoutsManuels.splice(idx, 0, copie);
+    await sauvegarder(); vueListe();
+  });
 }
 
 /** Modification du prix en un clic, partout où il est affiché. */
@@ -2747,8 +2916,16 @@ function construireEditeurRecette() {
     enteteCout,
   ]));
 
-  // Le piège n°1 de ce type d'application : le rappel reste visible en permanence.
-  racine.appendChild(el('div', { class: 'rappel', text: '⚠︎ Quantités pour 1 portion' }));
+  // Le piège n°1 de ce type d'application : le rappel reste visible en
+  // permanence, et il dit la base réellement utilisée à la saisie.
+  const rappel = el('div', { class: 'rappel' });
+  racine.appendChild(rappel);
+  function majRappel() {
+    const b = etat.baseSaisie;
+    rappel.textContent = (b === 1)
+      ? '⚠︎ Quantités pour 1 portion'
+      : '⚠︎ Quantités saisies pour ' + b + ' portions — enregistrées ramenées à 1 portion';
+  }
 
   // Le formulaire à gauche, l'aperçu à droite sur grand écran ; dessous sur mobile.
   const colonneForm = el('div', { class: 'col-form' });
@@ -2784,8 +2961,31 @@ function construireEditeurRecette() {
 
   // Lignes d'ingrédients
   const conteneurLignes = el('div', { class: 'lignes-ing', id: 'lignes-ing' });
+  const titreIngredients = el('h3');
+  // Une recette de livre donne « 400 g pour 4 personnes ». Plutôt que de faire
+  // diviser l'utilisateur ligne par ligne, on saisit tel quel et l'app divise.
+  const champBase = el('input', {
+    type: 'text', inputmode: 'numeric', value: etat.baseSaisie, id: 'base-saisie',
+    style: 'width:76px;flex:0 0 auto', 'aria-label': 'Nombre de portions de la recette saisie',
+  });
+  champBase.addEventListener('change', function () {
+    const n = parseNombre(champBase.value);
+    etat.baseSaisie = (n && n > 0) ? Math.min(99, Math.round(n)) : 1;
+    champBase.value = etat.baseSaisie;
+    majRappel(); majTitreIngredients(); rendreLignes();
+  });
+  function majTitreIngredients() {
+    titreIngredients.textContent = (etat.baseSaisie === 1)
+      ? 'Ingrédients — quantités pour 1 portion'
+      : 'Ingrédients — quantités telles qu\'écrites sur la recette';
+  }
   colonneForm.appendChild(el('div', { class: 'carte' }, [
-    el('h3', { text: 'Ingrédients — quantités pour 1 portion' }),
+    titreIngredients,
+    el('div', { class: 'barre-portions', style: 'margin-bottom:.5rem' }, [
+      el('label', { class: 'libelle', for: 'base-saisie', text: 'Je saisis les quantités pour' }),
+      champBase,
+      el('span', { style: 'flex:0 1 auto;font-weight:650;font-size:.95rem', text: 'portion(s)' }),
+    ]),
     conteneurLignes,
     el('div', { class: 'barre-actions', style: 'margin-top:.5rem' }, [
       el('button', { type: 'button', class: 'btn', text: '＋ Ajouter une ligne', onclick: function () { r.lignes.push(ligneVide()); rendreLignes({ index: r.lignes.length - 1, champ: 'ing' }); } }),
@@ -2820,6 +3020,8 @@ function construireEditeurRecette() {
   racine._apercu = apercu;
   racine._lignes = conteneurLignes;
 
+  majRappel();
+  majTitreIngredients();
   rendreLignes();
   majApercuRecette();
   setTimeout(function () { if (!r.nom) champNom.focus(); }, 0);
@@ -2900,12 +3102,20 @@ function rendreLignes(focusCible) {
       }, 150);
     });
 
+    const base = etat.baseSaisie;
     const champQte = el('input', {
-      type: 'text', inputmode: 'decimal', 'aria-label': 'Quantité pour 1 portion',
-      value: (typeof ligne.quantite === 'number' && ligne.quantite !== null) ? formatNombre(ligne.quantite, 3) : '',
+      type: 'text', inputmode: 'decimal',
+      'aria-label': base === 1 ? 'Quantité pour 1 portion' : ('Quantité pour ' + base + ' portions'),
+      value: (typeof ligne.quantite === 'number' && ligne.quantite !== null) ? formatNombre(ligne.quantite * base, 3) : '',
       placeholder: 'qté',
     });
-    champQte.addEventListener('input', function () { ligne.quantite = parseNombre(champQte.value); majApercuRecette(); });
+    champQte.addEventListener('input', function () {
+      const saisi = parseNombre(champQte.value);
+      // Le modèle reste toujours en « pour 1 portion » : la base de saisie
+      // n'est qu'une lentille, elle ne change rien à ce qui est enregistré.
+      ligne.quantite = (saisi === null) ? null : saisi / base;
+      majApercuRecette();
+    });
     champQte.addEventListener('keydown', function (ev) {
       if (ev.key !== 'Enter') return;
       ev.preventDefault();
@@ -2934,15 +3144,27 @@ function rendreLignes(focusCible) {
       champQte,
       champUnite,
       el('label', { class: 'inline-case zone-fixe', title: 'Ne se multiplie pas avec les portions' }, [caseFixe, el('span', { class: 'tpt', text: 'fixe' })]),
-      el('button', {
-        type: 'button', class: 'btn mini fantome', text: '✕', 'aria-label': 'Supprimer la ligne',
-        onclick: function () {
-          r.lignes.splice(index, 1);
-          if (!r.lignes.length) r.lignes.push(ligneVide());
-          rendreLignes();
-          majApercuRecette();
-        },
-      }),
+      el('div', { class: 'zone-fixe', style: 'gap:.1rem' }, [
+        el('button', {
+          type: 'button', class: 'btn mini fantome', text: '↑', 'aria-label': 'Monter la ligne',
+          disabled: index === 0,
+          onclick: function () { deplacerLigne(index, index - 1); },
+        }),
+        el('button', {
+          type: 'button', class: 'btn mini fantome', text: '↓', 'aria-label': 'Descendre la ligne',
+          disabled: index === r.lignes.length - 1,
+          onclick: function () { deplacerLigne(index, index + 1); },
+        }),
+        el('button', {
+          type: 'button', class: 'btn mini fantome', text: '✕', 'aria-label': 'Supprimer la ligne',
+          onclick: function () {
+            r.lignes.splice(index, 1);
+            if (!r.lignes.length) r.lignes.push(ligneVide());
+            rendreLignes();
+            majApercuRecette();
+          },
+        }),
+      ]),
     ]);
     conteneur.appendChild(bloc);
     bloc._champIng = champIng;
@@ -2956,6 +3178,18 @@ function rendreLignes(focusCible) {
       if (cible) setTimeout(function () { cible.focus(); cible.select && cible.select(); }, 0);
     }
   }
+  majApercuRecette();
+}
+
+/** Remonte ou descend une ligne d'ingrédient dans l'ordre de la recette. */
+function deplacerLigne(de, vers) {
+  const ed = etat.editionRecette;
+  if (!ed) return;
+  const lignes = ed.travail.lignes;
+  if (vers < 0 || vers >= lignes.length) return;
+  const [ligne] = lignes.splice(de, 1);
+  lignes.splice(vers, 0, ligne);
+  rendreLignes();
   majApercuRecette();
 }
 
@@ -3109,10 +3343,20 @@ function vueReglages() {
   carteRef.appendChild(el('h2', { text: 'Référentiel des ingrédients' }));
   const champRech = el('input', { type: 'search', placeholder: 'Rechercher un ingrédient…', value: etat.rechercheIngredients, 'aria-label': 'Rechercher un ingrédient' });
   champRech.addEventListener('input', function () { etat.rechercheIngredients = champRech.value; remplirTable(); });
-  carteRef.appendChild(el('div', { class: 'recherche' }, [
+  const barreRef = el('div', { class: 'recherche' }, [
     champRech,
     el('button', { type: 'button', class: 'btn', text: '＋ Nouvel ingrédient', onclick: function () { formulaireIngredient('', null); } }),
-  ]));
+  ]);
+  const inutilises = ingredientsInutilises(D);
+  if (inutilises.length) {
+    barreRef.appendChild(el('button', {
+      type: 'button', class: 'btn',
+      text: '🧹 Supprimer les ' + inutilises.length + ' inutilisés',
+      title: 'Ingrédients qu\'aucune recette n\'utilise',
+      onclick: purgerIngredientsInutilises,
+    }));
+  }
+  carteRef.appendChild(barreRef);
   const wrap = el('div', { class: 'table-wrap' });
   carteRef.appendChild(wrap);
   const infoRef = el('p', { class: 'tpt doux' });
@@ -3306,6 +3550,32 @@ function vueReglages() {
   v.appendChild(el('p', { class: 'tpt doux', style: 'text-align:center;margin-top:1rem' , text: 'Liste de courses — fichier autonome, aucune connexion réseau, aucune télémétrie.' }));
 
   window.scrollTo(0, scroll);
+}
+
+/** Supprime en une fois les ingrédients qu'aucune recette n'utilise. */
+async function purgerIngredientsInutilises() {
+  const cibles = ingredientsInutilises(D);
+  if (!cibles.length) { toast('Aucun ingrédient inutilisé.'); return; }
+  const liste = el('ul', { class: 'pt', style: 'max-height:220px;overflow:auto;margin:.3rem 0 0;padding-left:1.1rem' });
+  cibles.forEach(function (i) { liste.appendChild(el('li', { text: i.nom + ' — ' + RAYON_LIBELLE[i.rayon] })); });
+  const ok = await confirmer({
+    titre: 'Supprimer les ingrédients inutilisés',
+    labelOk: 'Supprimer les ' + cibles.length, danger: true,
+    corps: [
+      el('p', { class: 'pt', text: 'Ces ' + cibles.length + ' ingrédients ne sont utilisés par aucune recette. Leur suppression ne touche à aucune recette existante.' }),
+      liste,
+    ],
+  });
+  if (!ok) return;
+  const avant = D.ingredients.slice();
+  const cles = new Set(cibles.map(function (i) { return i.id; }));
+  D.ingredients = D.ingredients.filter(function (i) { return !cles.has(i.id); });
+  await sauvegarder();
+  rendre();
+  toast(cibles.length + ' ingrédient' + (cibles.length > 1 ? 's supprimés' : ' supprimé'), {
+    duree: 5000, actionLabel: 'Annuler',
+    onAction: async function () { D.ingredients = avant; await sauvegarder(); rendre(); },
+  });
 }
 
 function compterUtilisation() {
