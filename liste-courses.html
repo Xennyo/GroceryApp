@@ -111,21 +111,7 @@ a{ color:var(--accent); }
 /* Sur mobile, la barre du bas nomme déjà l'onglet actif : le titre y ferait
    double emploi et écrase les deux boutons. On le retire de l'affichage sans
    le retirer du document, pour les lecteurs d'écran. */
-@media (max-width:899px){
-  .topbar .titre{
-    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
-    overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; flex:0 0 0;
-  }
-  .topbar{ justify-content:space-between; }
-  .bouton-calendrier{ max-width:70%; }
-  .bouton-espace{ max-width:38%; }
-  /* Sans espace partagé, « Cet appareil » est l'état par défaut : la pastille
-     suffit, et la place revient au libellé de période. */
-  .bouton-espace.sans-espace .nom-espace{
-    position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
-  }
-  .bouton-espace.sans-espace{ padding:.2rem .5rem; }
-}
+
 .bouton-espace{
   flex:0 1 auto; min-width:0; display:inline-flex; align-items:center; gap:.35rem;
   background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
@@ -138,6 +124,19 @@ a{ color:var(--accent); }
 .pastille.synchronise{ background:var(--accent); }
 .pastille.envoi{ background:#c98a00; }
 .pastille.horsligne,.pastille.erreur{ background:var(--danger); }
+/* Sections repliables des réglages : le référentiel et l'ordre des rayons
+   prennent beaucoup de place pour un usage rare. */
+details.section{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
+  margin-bottom:.6rem; box-shadow:var(--ombre); overflow:hidden; }
+details.section > summary{
+  cursor:pointer; list-style:none; padding:.7rem .75rem; min-height:48px;
+  display:flex; align-items:center; gap:.5rem; font-weight:650; font-size:1.05rem;
+}
+details.section > summary::-webkit-details-marker{ display:none; }
+details.section > summary::before{ content:"▸"; color:var(--texte-doux); transition:transform 120ms ease; }
+details.section[open] > summary::before{ transform:rotate(90deg); }
+details.section > summary .compte{ margin-left:auto; font-size:.8rem; font-weight:600; color:var(--texte-doux); }
+details.section .contenu{ padding:0 .75rem .75rem; }
 .calendrier .periode-achat{ background:var(--surface-2); border-radius:var(--r); padding:.5rem .6rem; }
 .calendrier .periode-ligne{ display:flex; align-items:center; gap:.4rem; }
 .calendrier .periode-nom{ flex:1 1 auto; text-align:center; font-weight:650; font-size:1rem; }
@@ -158,8 +157,17 @@ a{ color:var(--accent); }
 .case-jour.aujourdhui .num{ text-decoration:underline; text-underline-offset:2px; }
 .case-jour.ouvert{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
 .jour-ouvert{ margin-top:.5rem; }
+/* La navigation de période prend l'espace laissé libre, pour que le libellé
+   s'affiche en entier plutôt que d'être tronqué à côté d'un vide. */
+.nav-periode{ display:flex; align-items:center; gap:.15rem; min-width:0; flex:1 1 auto; }
+.nav-periode .fleche{
+  flex:0 0 auto; width:32px; height:36px; padding:0; border:0; background:none;
+  color:var(--texte-doux); font:inherit; font-size:1.2rem; line-height:1; cursor:pointer;
+  border-radius:8px;
+}
+.nav-periode .fleche:hover{ background:var(--bg-alt); color:var(--texte); }
 .bouton-calendrier{
-  flex:0 0 auto; display:inline-flex; align-items:center; gap:.3rem;
+  flex:1 1 auto; justify-content:center; display:inline-flex; align-items:center; gap:.3rem;
   background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
   padding:.2rem .6rem; min-height:36px; cursor:pointer; font:inherit; font-size:.82rem;
   font-weight:600; color:var(--texte); max-width:58%;
@@ -484,6 +492,31 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
 }
 .bandeau-exemple span{ flex:1 1 200px; }
 
+/* ——— BARRE DE TITRE : AJUSTEMENTS RESPONSIVES ———
+   Placés après les composants qu'ils ajustent : à spécificité égale, c'est
+   la dernière règle qui l'emporte. */
+@media (max-width:899px){
+  /* La barre du bas nomme déjà l'onglet actif : le titre y ferait double
+     emploi et écraserait les boutons. Retiré de l'affichage, pas du document. */
+  .topbar .titre{
+    position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+    overflow:hidden; clip-path:inset(50%); white-space:nowrap; border:0; flex:0 0 0;
+  }
+  .topbar{ justify-content:space-between; }
+  .bouton-espace{ max-width:40%; }
+  /* Sans espace partagé, « Cet appareil » est l'état par défaut : la pastille
+     suffit, et la place revient au libellé de période. */
+  .bouton-espace.sans-espace .nom-espace{
+    position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%);
+  }
+  .bouton-espace.sans-espace{ padding:.2rem .5rem; }
+}
+@media (min-width:900px){
+  /* Le titre peut s'étirer, la période non : elle doit rester lisible. */
+  .nav-periode{ flex:0 0 auto; }
+  .bouton-calendrier{ flex:0 0 auto; max-width:none; }
+}
+
 /* ——— IMPRESSION ——— */
 @media print{
   body{ background:#fff; color:#000; }
@@ -511,10 +544,14 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
     <div id="bandeau-degrade" hidden role="status"></div>
     <header class="topbar">
       <h1 class="titre" id="titre-page">Semaine</h1>
-      <button type="button" class="bouton-calendrier" id="bouton-calendrier" title="Planifier les repas et choisir la période d'achat">
-        <span aria-hidden="true">🗓</span>
-        <span class="periode" id="libelle-periode">Semaine</span>
-      </button>
+      <div class="nav-periode" id="nav-periode">
+        <button type="button" class="fleche" id="periode-avant" aria-label="Période précédente">‹</button>
+        <button type="button" class="bouton-calendrier" id="bouton-calendrier" title="Planifier les repas et choisir la période d'achat">
+          <span aria-hidden="true">🗓</span>
+          <span class="periode" id="libelle-periode">Semaine</span>
+        </button>
+        <button type="button" class="fleche" id="periode-apres" aria-label="Période suivante">›</button>
+      </div>
       <button type="button" class="bouton-espace" id="bouton-espace" hidden>
         <span class="pastille" id="pastille-sync"></span>
         <span class="nom-espace" id="nom-espace">Cet appareil</span>
@@ -2375,6 +2412,8 @@ const etat = {
   rayonsOuverts: {},               // surcharge manuelle du pliage des rayons
   rayonsToutCoches: {},            // dernier état connu, pour réarmer le pliage auto
   provenanceOuverte: null,
+  refOuvert: false,                // référentiel des ingrédients déplié
+  ordreOuvert: false,              // ordre des rayons déplié
   recapOuvert: false,              // détail du récapitulatif de la semaine
   placardOuvert: false,
   ecranAllume: false,
@@ -2427,8 +2466,7 @@ function allerA(onglet) {
 function rendre() {
   if (!D) return;
   appliquerTheme();
-  const btnCal = $('#bouton-calendrier');
-  btnCal.hidden = (etat.onglet !== 'semaine' && etat.onglet !== 'liste');
+  $('#nav-periode').hidden = (etat.onglet !== 'semaine' && etat.onglet !== 'liste');
   majLibellePeriode();
   if (etat.onglet === 'semaine') vueSemaine();
   else if (etat.onglet === 'liste') vueListe();
@@ -2523,7 +2561,6 @@ function formulaireIngredient(nomInitial, callback, ingredientExistant) {
   const blocUnitePiece = el('label', { class: 'champ' }, [
     el('span', { text: 'Unité de la pièce' }),
     champUnitePiece,
-    el('span', { class: 'tpt doux', text: 'pièce, gousse, botte, tranche, pincée…' }),
   ]);
   const champPrix = el('input', { type: 'text', inputmode: 'decimal', value: (src.prix && typeof src.prix.valeur === 'number') ? formatNombre(src.prix.valeur, 2) : '', placeholder: 'ex. 2,40' });
   const suffixePrix = el('span', { class: 'puce', text: PAR_PRIX_LIBELLE[PAR_PRIX_PAR_FAMILLE[src.famille]] });
@@ -2549,7 +2586,6 @@ function formulaireIngredient(nomInitial, callback, ingredientExistant) {
       el('div', { class: 'ligne-champs' }, [champPrix, el('div', { class: 'zone-fixe' }, [suffixePrix])]),
     ]),
     el('label', { class: 'inline-case' }, [champPlacard, el('span', { text: 'Produit de fond de placard (sel, huile, épices…)' })]),
-    el('p', { class: 'tpt doux', text: 'La famille est définitive pour les calculs : on ne convertit jamais entre masse, volume et pièce.' }),
   ];
 
   ouvrirModale({
@@ -3568,7 +3604,6 @@ function editionPrixRapide(ingredient, apres) {
         el('span', { text: 'Prix de référence en ' + unite }),
         el('div', { class: 'ligne-champs' }, [champ, el('div', { class: 'zone-fixe' }, [el('span', { class: 'puce', text: unite })])]),
       ]),
-      el('p', { class: 'tpt doux', text: 'Laisser vide si le prix est inconnu : la ligne affichera « — » et le total indiquera son incertitude.' }),
     ],
     actions: [
       { label: 'Annuler', onClick: function (f) { f(); } },
@@ -3871,7 +3906,6 @@ function construireEditeurRecette() {
     el('div', { class: 'barre-actions', style: 'margin-top:.5rem' }, [
       el('button', { type: 'button', class: 'btn', text: '＋ Ajouter une ligne', onclick: function () { r.lignes.push(ligneVide()); rendreLignes({ index: r.lignes.length - 1, champ: 'ing' }); } }),
     ]),
-    el('p', { class: 'tpt doux', text: 'Au clavier : Entrée sur l\'ingrédient valide la suggestion, Entrée sur la quantité crée la ligne suivante.' }),
   ]));
 
   // Notes
@@ -4221,8 +4255,14 @@ function vueReglages() {
   v.innerHTML = '';
 
   /* Référentiel des ingrédients */
-  const carteRef = el('div', { class: 'carte' });
-  carteRef.appendChild(el('h2', { text: 'Référentiel des ingrédients' }));
+  const carteRef = el('details', { class: 'section', open: etat.refOuvert });
+  carteRef.addEventListener('toggle', function () { etat.refOuvert = carteRef.open; });
+  carteRef.appendChild(el('summary', {}, [
+    el('span', { text: 'Référentiel des ingrédients' }),
+    el('span', { class: 'compte', text: D.ingredients.length + ' ingrédients' }),
+  ]));
+  const contenuRef = el('div', { class: 'contenu' });
+  carteRef.appendChild(contenuRef);
   const champRech = el('input', { type: 'search', placeholder: 'Rechercher un ingrédient…', value: etat.rechercheIngredients, enterkeyhint: 'search', 'aria-label': 'Rechercher un ingrédient' });
   champRech.addEventListener('input', function () { etat.rechercheIngredients = champRech.value; remplirTable(); });
   const barreRef = el('div', { class: 'recherche' }, [
@@ -4238,11 +4278,11 @@ function vueReglages() {
       onclick: purgerIngredientsInutilises,
     }));
   }
-  carteRef.appendChild(barreRef);
+  contenuRef.appendChild(barreRef);
   const wrap = el('div', { class: 'table-wrap' });
-  carteRef.appendChild(wrap);
+  contenuRef.appendChild(wrap);
   const infoRef = el('p', { class: 'tpt doux' });
-  carteRef.appendChild(infoRef);
+  contenuRef.appendChild(infoRef);
   v.appendChild(carteRef);
 
   function remplirTable() {
@@ -4352,16 +4392,15 @@ function vueReglages() {
     });
     table.appendChild(tbody);
     wrap.appendChild(table);
-    infoRef.textContent = liste.length + ' ingrédient' + (liste.length > 1 ? 's' : '') + ' sur ' + D.ingredients.length +
-      ' · la famille détermine les unités acceptées ; on ne convertit jamais entre familles.';
+    infoRef.textContent = liste.length + ' ingrédient' + (liste.length > 1 ? 's' : '') + ' sur ' + D.ingredients.length;
   }
   remplirTable();
 
   /* Ordre des rayons */
-  const carteOrdre = el('div', { class: 'carte' });
-  carteOrdre.appendChild(el('h2', { text: 'Ordre des rayons' }));
-  carteOrdre.appendChild(el('p', { class: 'tpt doux', text: 'C\'est l\'ordre de parcours du magasin. Glissez les lignes, ou utilisez les flèches.' }));
-  carteOrdre.appendChild(construireOrdreRayons());
+  const carteOrdre = el('details', { class: 'section', open: etat.ordreOuvert });
+  carteOrdre.addEventListener('toggle', function () { etat.ordreOuvert = carteOrdre.open; });
+  carteOrdre.appendChild(el('summary', {}, [el('span', { text: 'Ordre des rayons' })]));
+  carteOrdre.appendChild(el('div', { class: 'contenu' }, [construireOrdreRayons()]));
   v.appendChild(carteOrdre);
 
   /* Affichage */
@@ -4384,7 +4423,6 @@ function vueReglages() {
   /* Sauvegarde */
   v.appendChild(el('div', { class: 'carte' }, [
     el('h2', { text: 'Sauvegarde de vos données' }),
-    el('p', { class: 'pt doux', text: 'Vos données ne quittent jamais cet appareil. L\'export est votre seule sauvegarde : faites-en un de temps en temps.' }),
     el('div', { class: 'barre-actions' }, [
       el('button', { type: 'button', class: 'btn principal', text: '⭳ Exporter les données', onclick: exporterDonnees }),
       el('button', { type: 'button', class: 'btn', text: '⭱ Importer un fichier', onclick: importerDonnees }),
@@ -4432,7 +4470,6 @@ function vueReglages() {
     el('button', { type: 'button', class: 'btn danger', text: 'Effacer toutes les données', onclick: effacerTout }),
   ]));
 
-  v.appendChild(el('p', { class: 'tpt doux', style: 'text-align:center;margin-top:1rem' , text: 'Liste de courses — fichier autonome, aucune connexion réseau, aucune télémétrie.' }));
 
   window.scrollTo(0, scroll);
 }
@@ -4809,7 +4846,6 @@ function dessinerCalendrier(corps) {
     el('button', { type: 'button', class: 'btn mini', text: 'Cette semaine', onclick: async function () {
       await definirPeriode(periodeSemaineCourante()); moisAffiche = new Date(); jourOuvert = null; dessinerCalendrier(corps);
     } }),
-    jourOuvert ? null : el('span', { class: 'tpt doux', style: 'align-self:center', text: 'Touchez un jour pour y placer des repas.' }),
   ]));
 
   /* --- Repas du jour ouvert --- */
@@ -5075,12 +5111,8 @@ function carteSynchronisation() {
     await sauvegarder();
     await rafraichirEtatEspaces();
   });
-  const aide = (serveurDetecte && D.reglages.serveurSync === serveurDetecte)
-    ? 'Détecté automatiquement : cette application est servie par ce serveur.'
-    : 'Adresse de votre serveur. Voir serveur/LISEZMOI.md dans le dépôt.';
   const bloc = el('label', { class: 'champ' }, [
     el('span', { text: 'Serveur de synchronisation' }), champServeur,
-    el('span', { class: 'tpt doux', text: aide }),
   ]);
   carte.appendChild(bloc);
   if (serveurDetecte && D.reglages.serveurSync !== serveurDetecte) {
@@ -5115,9 +5147,6 @@ function carteSynchronisation() {
   }
   carte.appendChild(actions);
 
-  carte.appendChild(el('p', { class: 'tpt doux', style: 'margin-top:.5rem', text:
-    'Un espace partagé n\'a pas de compte : le lien fait office de clé. Qui l\'a peut tout voir et tout modifier. ' +
-    'Chaque espace est indépendant — ses recettes, sa liste et son historique lui appartiennent.' }));
   return carte;
 }
 
@@ -5275,6 +5304,9 @@ async function demarrer() {
   });
   $('#bouton-espace').addEventListener('click', ouvrirSelecteurEspaces);
   $('#bouton-calendrier').addEventListener('click', function () { ouvrirCalendrier(); });
+  // Se déplacer de période en période sans ouvrir le calendrier.
+  $('#periode-avant').addEventListener('click', function () { decalerPeriode(-1); });
+  $('#periode-apres').addEventListener('click', function () { decalerPeriode(1); });
   await rafraichirEtatEspaces();
 
   // Hauteur réelle de la barre de titre, pour que l'en-tête de la liste se cale
