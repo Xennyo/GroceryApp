@@ -1845,6 +1845,36 @@ function selectionDuJour(donnees, iso) {
 }
 
 /**
+ * Replace un plan enregistré dans une autre période. Les dates d'une semaine
+ * type ou d'une semaine archivée sont celles du jour où on les a faites :
+ * telles quelles, les repas tombent hors de la période d'achat et sortent de
+ * la liste sans rien dire. On conserve donc le jour de la semaine et les écarts
+ * entre repas ; ce qui déborde revient sans jour, et reste donc dans la liste.
+ */
+function rebaserSelection(sel, periode) {
+  const copies = (sel || []).map(function (s) { return Object.assign({}, s); });
+  const datees = copies.map(function (s) { return s.date; })
+    .filter(function (d) { return d && dateDepuisISO(d); }).sort();
+  const debut = dateDepuisISO(periode.debut);
+  const origine = datees.length ? dateDepuisISO(datees[0]) : null;
+  // Sans point de départ exploitable il n'y a rien à replacer, mais une date
+  // illisible ne doit pas survivre au passage.
+  if (!debut || !origine) {
+    return copies.map(function (s) { if (!s.date || !dateDepuisISO(s.date)) s.date = null; return s; });
+  }
+  // Le premier repas daté retombe sur le même jour de la semaine, au plus tôt.
+  const ancre = ajouterJours(debut, ((origine.getDay() - debut.getDay()) + 7) % 7);
+  return copies.map(function (s) {
+    if (!s.date) { s.date = null; return s; }
+    const d = dateDepuisISO(s.date);
+    if (!d) { s.date = null; return s; }
+    const neuf = isoDuJour(ajouterJours(ancre, Math.round((d - origine) / 86400000)));
+    s.date = dansLaPeriode(neuf, periode) ? neuf : null;
+    return s;
+  });
+}
+
+/**
  * Rayons frais présents dans la liste. Sert à prévenir quand la période
  * dépasse la semaine : ce n'est pas le planning qui périme, c'est l'achat.
  */
@@ -3292,7 +3322,7 @@ function chargerSemaineType() {
 /** Applique une semaine type : en complément de la sélection, ou à sa place. */
 async function appliquerSemaineType(type, mode) {
   const idsConnus = new Set(D.recettes.map(function (r) { return r.id; }));
-  const voulue = nettoyerSelection(type.selection, idsConnus);
+  const voulue = rebaserSelection(nettoyerSelection(type.selection, idsConnus), D.semaine.periode);
 
   if (mode === 'remplacer') {
     const avant = D.semaine.selection.slice();
@@ -3316,7 +3346,7 @@ async function appliquerSemaineType(type, mode) {
   let deja = 0;
   voulue.forEach(function (s) {
     if (selectionDe(s.recetteId)) { deja += 1; return; }
-    const entree = nouvelleEntree(s.recetteId, s.portions, null);
+    const entree = nouvelleEntree(s.recetteId, s.portions, s.date);
     D.semaine.selection.push(entree);
     ajoutees.push(entree.id);
   });
@@ -3346,7 +3376,9 @@ async function reprendreSemaineDerniere() {
     labelOk: 'Reprendre',
   });
   if (!ok) return;
-  D.semaine.selection = nettoyerSelection(derniere.selection, new Set(D.recettes.map(function (r) { return r.id; })));
+  D.semaine.selection = rebaserSelection(
+    nettoyerSelection(derniere.selection, new Set(D.recettes.map(function (r) { return r.id; }))),
+    D.semaine.periode);
   D.semaine.coches = {};
   await sauvegarder();
   rendre();
