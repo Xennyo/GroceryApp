@@ -273,8 +273,8 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 .recherche input[type="search"]{ flex:1 1 180px; }
 
 /* ——— SEMAINE ——— */
-.grille-recettes{ display:grid; gap:.6rem; grid-template-columns:1fr; }
-@media (min-width:640px){ .grille-recettes{ grid-template-columns:1fr 1fr; } }
+.grille-recettes{ display:grid; gap:.6rem; grid-template-columns:minmax(0,1fr); }
+@media (min-width:640px){ .grille-recettes{ grid-template-columns:minmax(0,1fr) minmax(0,1fr); } }
 .carte-recette{ display:block; }
 .carte-recette .entete-carte{ display:flex; align-items:center; gap:.5rem; }
 .carte-recette .infos{ flex:1 1 auto; min-width:0; }
@@ -308,6 +308,20 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
   font-size:1rem; line-height:1; color:var(--texte-doux); }
 .carte-recette .retirer:hover{ color:var(--danger); }
 .carte-recette .ajouter{ min-height:36px; width:46px; padding:0; }
+/* Choisir le jour d'un repas sans ouvrir le calendrier. Au-delà de sept jours
+   la rangée défile plutôt que de rétrécir les cibles tactiles. */
+.rangee-jours{ display:flex; gap:.2rem; margin-top:.3rem; min-width:0; overflow-x:auto; padding-bottom:2px; }
+.puce-jour{
+  flex:0 0 auto; display:inline-flex; flex-direction:column; align-items:center; justify-content:center;
+  cursor:pointer; font:inherit; line-height:1.05; padding:.1rem .25rem;
+  background:var(--surface); border:1px solid var(--border-fort); color:var(--texte-doux);
+  border-radius:8px; min-width:34px; min-height:32px;
+  transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease;
+}
+.puce-jour .l{ font-size:.78rem; font-weight:700; }
+.puce-jour .n{ font-size:.62rem; }
+.puce-jour:hover{ background:var(--bg-alt); color:var(--texte); }
+.puce-jour[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:var(--accent-texte); }
 .stepper.compact button{ width:36px; height:36px; font-size:1.05rem; }
 .stepper.compact .valeur{ min-width:28px; font-size:.9rem; }
 .barre-portions{
@@ -2726,6 +2740,50 @@ async function changerPortionsEntree(entreeId, delta) {
   await sauvegarder();
   rendre();
 }
+/**
+ * Place un repas à une date, ou l'en retire si on retouche le jour déjà actif.
+ * C'est la même entrée qui bouge : dater un plat déjà retenu ne doit jamais en
+ * créer un second, sans quoi la liste de courses le compte deux fois.
+ */
+async function daterEntree(entreeId, iso) {
+  const e = D.semaine.selection.find(function (x) { return x.id === entreeId; });
+  if (!e) return;
+  e.date = (e.date === iso) ? null : (iso || null);
+  await sauvegarder();
+  rendre();
+}
+/**
+ * Rangée des jours de la période pour un repas : un appui le place, un second
+ * appui sur le même jour le remet sans date. Choisir le jour là où on choisit
+ * la recette évite d'ouvrir le calendrier pour le geste le plus courant.
+ */
+function rangeeJours(entreeId) {
+  const rangee = el('div', { class: 'rangee-jours', role: 'group', 'aria-label': 'Jour du repas' });
+  function peindre() {
+    rangee.innerHTML = '';
+    const e = D.semaine.selection.find(function (x) { return x.id === entreeId; });
+    if (!e) return;
+    const jours = joursDeLaPeriode(D.semaine.periode);
+    const avecNumero = jours.length > 7;   // au-delà de la semaine, l'initiale ne suffit plus
+    jours.forEach(function (iso) {
+      const j = dateDepuisISO(iso);
+      if (!j) return;
+      const i = (j.getDay() + 6) % 7;
+      const actif = e.date === iso;
+      const b = el('button', {
+        type: 'button', class: 'puce-jour', 'aria-pressed': String(actif),
+        'aria-label': (actif ? 'Retirer du ' : 'Placer le ') + JOURS_LONGS[i] + ' ' + j.getDate() + ' ' + MOIS[j.getMonth()],
+      }, [
+        el('span', { class: 'l', text: JOURS_COURTS[i].charAt(0).toUpperCase() }),
+        avecNumero ? el('span', { class: 'n', text: String(j.getDate()) }) : null,
+      ]);
+      b.addEventListener('click', async function () { await daterEntree(entreeId, iso); peindre(); });
+      rangee.appendChild(b);
+    });
+  }
+  peindre();
+  return rangee;
+}
 /** Change la période couverte par la liste de courses. */
 async function definirPeriode(periode) {
   D.semaine.periode = periodeValide(periode);
@@ -2940,6 +2998,9 @@ function vueSemaine() {
       grille.appendChild(el('div', { class: 'carte carte-recette' + (sel ? ' selectionnee' : '') }, [
         el('div', { class: 'entete-carte' }, [el('div', { class: 'infos' }, [nom]), action]),
         meta,
+        // Un seul repas : le jour se choisit ici. Plusieurs, seul le calendrier
+        // peut les distinguer, et le bouton « Planning » y mène.
+        (sel && entrees.length === 1) ? rangeeJours(sel.id) : null,
       ]));
     });
   }
@@ -3033,6 +3094,13 @@ function apercuRecette(recette) {
   if (fraicheur) meta.appendChild(el('span', { class: 'puce alerte', text: fraicheur }));
   else if (!recette.derniereUtilisation) meta.appendChild(el('span', { class: 'puce', text: 'jamais faite' }));
   corps.appendChild(meta);
+
+  // Le jour se règle depuis la fiche aussi : on y arrive souvent avant de
+  // savoir quand on cuisinera le plat.
+  if (sel && entreesDe(recette.id).length === 1) {
+    corps.appendChild(el('div', { class: 'tpt doux', style: 'margin:.1rem 0 0', text: 'Jour' }));
+    corps.appendChild(rangeeJours(sel.id));
+  }
 
   corps.appendChild(el('h3', { style: 'margin:.2rem 0 0', text: 'Pour ' + portions + ' portion' + (portions > 1 ? 's' : '') }));
   const agr = agregerSelection(D, [{ recetteId: recette.id, portions: portions }]);
@@ -4884,6 +4952,27 @@ function panneauDuJour(corps, iso) {
     });
   }
 
+  // Repas déjà retenus mais sans jour : un appui les place ici. Ils se
+  // déplacent, ils ne se dupliquent pas. Hors période d'achat, la question ne
+  // se pose pas : ces repas-là appartiennent à la période en cours.
+  const dansPeriode = dansLaPeriode(iso, D.semaine.periode);
+  const sansJour = dansPeriode
+    ? selectionActive(D).filter(function (e) { return !e.date; })
+    : [];
+  if (sansJour.length) {
+    const aPlacer = el('div', { class: 'filtres', style: 'margin:.35rem 0 0' });
+    sansJour.forEach(function (e) {
+      const r = recetteParId(e.recetteId);
+      if (!r) return;
+      const b = el('button', { type: 'button', class: 'puce-filtre', text: '↦ ' + r.nom,
+        'aria-label': 'Placer ' + r.nom + ' ce jour-là' });
+      b.addEventListener('click', async function () { await daterEntree(e.id, iso); dessinerCalendrier(corps); });
+      aPlacer.appendChild(b);
+    });
+    bloc.appendChild(el('div', { class: 'tpt doux', style: 'margin:.5rem 0 0', text: 'À placer' }));
+    bloc.appendChild(aPlacer);
+  }
+
   // Choix d'une recette à placer ce jour-là, par autocomplétion.
   const champ = el('input', { type: 'text', placeholder: 'Ajouter un plat…', enterkeyhint: 'done',
     'aria-label': 'Ajouter un plat à ce jour' });
@@ -4898,7 +4987,19 @@ function panneauDuJour(corps, iso) {
       const r = recetteParId(it.cle);
       if (!r) return;
       champ.value = '';
-      await ajouterASemaine(r, iso);
+      // Recette déjà retenue sans jour : on la date au lieu d'en ajouter une
+      // seconde, sinon la liste de courses compte le plat deux fois.
+      const orphelin = dansPeriode
+        ? selectionActive(D).find(function (e) { return e.recetteId === r.id && !e.date; })
+        : null;
+      if (orphelin) {
+        const idOrphelin = orphelin.id;
+        await daterEntree(idOrphelin, iso);
+        toast('« ' + r.nom + ' » déplacé ici.', { duree: 5000, actionLabel: 'Annuler',
+          onAction: async function () { await daterEntree(idOrphelin, null); dessinerCalendrier(corps); } });
+      } else {
+        await ajouterASemaine(r, iso);
+      }
       dessinerCalendrier(corps);
     },
   });
