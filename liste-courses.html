@@ -123,7 +123,7 @@ a{ color:var(--accent); }
 .pastille{ flex:0 0 auto; width:9px; height:9px; border-radius:50%; background:var(--texte-doux); }
 .pastille.synchronise{ background:var(--accent); }
 .pastille.envoi{ background:#c98a00; }
-.pastille.horsligne,.pastille.erreur{ background:var(--danger); }
+.pastille.horsligne,.pastille.erreur,.pastille.introuvable{ background:var(--danger); }
 /* Sections repliables des réglages : le référentiel et l'ordre des rayons
    prennent beaucoup de place pour un usage rare. */
 details.section{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
@@ -1161,6 +1161,7 @@ const Store = (function () {
           method: 'POST', headers: entetes(),
           body: JSON.stringify({ operations: aEnvoyer, auteur: auteur }),
         });
+        if (rep.status === 404) { signalerEtat('introuvable'); arreterSondage(); return; }
         if (!rep.ok) throw new Error('envoi refusé (' + rep.status + ')');
         await rep.json();
         enAttente = enAttente.slice(aEnvoyer.length);
@@ -1168,6 +1169,10 @@ const Store = (function () {
 
       // 2. Récupérer tout ce qui s'est écrit depuis notre position d'origine.
       const rep2 = await fetch(urlEspace('?depuis=' + (forcerComplet ? 0 : versionAvant)), { headers: entetes() });
+      // Le serveur ne connaît plus cet espace : ses données ont été perdues.
+      // Ce n'est pas une panne passagère, inutile de continuer à sonder — et
+      // l'appareil, lui, a toujours le document complet.
+      if (rep2.status === 404) { signalerEtat('introuvable'); arreterSondage(); return; }
       if (!rep2.ok) throw new Error('lecture refusée (' + rep2.status + ')');
       const r2 = await rep2.json();
       if (r2.nom && espaceCourant.nom !== r2.nom) {
@@ -1423,6 +1428,38 @@ const Store = (function () {
       const id = p.get('espace'), cle = p.get('cle'), serveur = p.get('serveur');
       if (!id || !cle || !serveur) return null;
       return { id: id, cle: cle, serveur: String(serveur).replace(/\/+$/, '') };
+    },
+
+    /**
+     * Reconstruit sur le serveur un espace qu'il ne connaît plus, avec le même
+     * identifiant et la même clé : les liens déjà partagés continuent de
+     * fonctionner. Le contenu est celui de cet appareil.
+     */
+    async restaurerEspace(id) {
+      const reg = lireRegistre();
+      const e = reg.espaces.find(function (x) { return x.id === (id || reg.courant); });
+      if (!e) throw new Error('Espace inconnu sur cet appareil.');
+      const doc = (espaceCourant && espaceCourant.id === e.id && racine) ? racine : null;
+      if (!doc) throw new Error('Ouvrez cet espace avant de le reconstruire.');
+      const rep = await fetch(e.serveur + '/api/espaces', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: e.id, cle: e.cle, nom: e.nom, document: doc }),
+      });
+      if (rep.status === 409) {
+        // Quelqu'un d'autre l'a déjà reconstruit : il n'y a qu'à se resynchroniser.
+        demarrerSondage();
+        await echanger(true);
+        return etat;
+      }
+      if (!rep.ok) throw new Error('Le serveur a refusé la reconstruction (' + rep.status + ').');
+      const r = await rep.json();
+      base = copie(doc);
+      version = r.version || 1;
+      enAttente = [];
+      ecrireMaintenant();
+      demarrerSondage();
+      signalerEtat('synchronise');
+      return etat;
     },
 
     /** Force un aller-retour avec le serveur. */
@@ -5690,6 +5727,7 @@ const ETAT_LIBELLE = {
   envoi: 'Envoi…',
   horsligne: 'Hors ligne',
   erreur: 'Synchro en échec',
+  introuvable: 'Espace perdu sur le serveur',
 };
 
 let infosEspaces = { courant: null, espaces: [], etat: 'local', enAttente: 0 };
@@ -5824,12 +5862,15 @@ function montrerLienPartage() {
 /** Un lien de partage dans l'adresse : on propose de rejoindre l'espace. */
 async function traiterLienEntrant() {
   if (typeof location === 'undefined' || !location.hash) return false;
-  const colis = lireLienRecette(location.hash);
+  // L'adresse est nettoyée juste après : on garde le lien sous la main, sinon
+  // il ne reste plus rien à donner à rejoindreEspace().
+  const lien = location.hash;
+  const colis = lireLienRecette(lien);
   if (colis) {
     history.replaceState(null, '', location.pathname + location.search);
     return await proposerImportRecette(colis);
   }
-  const infos = Store.lireLienPartage(location.hash);
+  const infos = Store.lireLienPartage(lien);
   if (!infos) return false;
   history.replaceState(null, '', location.pathname + location.search);
 
@@ -5846,16 +5887,41 @@ async function traiterLienEntrant() {
   });
   if (!ok) return false;
   try {
-    D = await Store.rejoindreEspace(location.hash || infos);
+    D = await Store.rejoindreEspace(lien);
   } catch (e) {
-    try { D = await Store.rejoindreEspace(infos); }
-    catch (e2) { toast(e2.message || 'Impossible de rejoindre cet espace.'); return false; }
+    // Le message dit pourquoi : clé refusée, espace disparu du serveur, ou
+    // serveur injoignable. Le masquer par « lien illisible » n'aiderait personne.
+    toast(e.message || 'Impossible de rejoindre cet espace.');
+    return false;
   }
   await rafraichirEtatEspaces();
   appliquerTheme();
   allerA('semaine');
   toast('Espace rejoint.');
   return true;
+}
+
+/**
+ * Remonte sur le serveur un espace qu'il a perdu, sans changer son identifiant
+ * ni sa clé : ce qui a déjà été partagé reste valable.
+ */
+async function reconstruireEspace() {
+  const ok = await confirmer({
+    titre: 'Reconstruire l\'espace',
+    message: 'L\'espace est recréé sur le serveur avec le contenu de cet appareil, ' +
+      'sous le même identifiant : les liens déjà envoyés fonctionneront à nouveau. ' +
+      'Ce que d\'autres appareils ont modifié sans que ce téléphone le reçoive sera perdu.',
+    labelOk: 'Reconstruire',
+  });
+  if (!ok) return;
+  try {
+    await Store.restaurerEspace();
+    await rafraichirEtatEspaces();
+    rendre();
+    toast('Espace reconstruit — le lien de partage remarche.');
+  } catch (e) {
+    toast(e.message || 'Reconstruction impossible.');
+  }
 }
 
 /* --- Écran de réglages : la carte « Partage » --- */
@@ -5872,6 +5938,19 @@ function carteSynchronisation() {
         (infosEspaces.enAttente ? ' (' + infosEspaces.enAttente + ' modification' + (infosEspaces.enAttente > 1 ? 's' : '') + ' en attente)' : '')
       : 'Les données restent sur cet appareil. Rien n\'est envoyé nulle part.' }),
   ]));
+
+  // Le serveur a perdu ses données — un redéploiement sans disque persistant,
+  // le plus souvent. Cet appareil, lui, a toujours tout : on peut le remonter
+  // au même identifiant, et les liens déjà partagés remarchent.
+  if (courant && infosEspaces.etat === 'introuvable') {
+    carte.appendChild(el('div', { class: 'carte plate', style: 'margin:.2rem 0 .6rem;border-color:var(--danger)' }, [
+      el('p', { class: 'pt', style: 'margin:0 0 .4rem', text:
+        'Le serveur ne connaît plus cet espace. Vos données sont intactes sur cet appareil ; ' +
+        'le reconstruire remet en service le lien déjà partagé.' }),
+      el('button', { type: 'button', class: 'btn principal', text: '⟳ Reconstruire l\'espace',
+        onclick: reconstruireEspace }),
+    ]));
+  }
 
   const champServeur = el('input', {
     type: 'url', placeholder: 'https://mon-serveur.exemple', value: D.reglages.serveurSync || '',

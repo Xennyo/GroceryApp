@@ -24,9 +24,32 @@ VPS. Deux exigences :
 
 1. **HTTPS.** Sans lui, pas d'installation sur l'écran d'accueil, pas de service
    worker, et la clé de l'espace circulerait en clair.
-2. **Un disque qui persiste.** Le dossier `--donnees` doit survivre aux
-   redémarrages. Sur les hébergeurs à système de fichiers éphémère, monter un
-   volume — sinon les espaces disparaissent au premier redéploiement.
+2. **Un disque qui persiste.** C'est l'erreur de déploiement la plus fréquente,
+   et elle ne se voit qu'au redéploiement suivant. Le dossier `--donnees` doit
+   survivre aux redémarrages **et aux mises à jour du code**. Sur la plupart
+   des hébergeurs, le système de fichiers du conteneur est reconstruit à chaque
+   déploiement : sans volume monté sur ce dossier, tous les espaces
+   disparaissent et les liens déjà partagés cessent de fonctionner.
+
+   Au démarrage, le serveur affiche le nombre d'espaces qu'il voit et prévient
+   quand le dossier semble être sur le disque du conteneur. Si le compte
+   retombe à zéro après un déploiement, c'est exactement ce problème.
+
+   | Hébergeur | Ce qu'il faut faire |
+   |---|---|
+   | Fly.io | `fly volumes create donnees --size 1`, puis dans `fly.toml` : `[mounts] source="donnees" destination="/donnees"` |
+   | Render | Ajouter un *Disk*, chemin de montage `/donnees` (indisponible sur l'offre gratuite) |
+   | Railway | Ajouter un *Volume* monté sur `/donnees` |
+   | VPS / Docker | `docker run -v listecourses:/donnees …` |
+
+   L'image fixe déjà `DONNEES=/donnees` : il n'y a que le volume à monter.
+
+**Si les espaces ont déjà disparu.** Rien n'est perdu tant qu'un appareil a
+encore l'espace : l'application y détecte l'état « espace perdu sur le serveur »
+et propose **Reconstruire l'espace**, sous Plus → Partage & synchronisation.
+L'espace est recréé avec le même identifiant et la même clé, donc les liens
+déjà envoyés fonctionnent à nouveau. Montez le volume d'abord, sinon la perte
+se reproduira au déploiement suivant.
 
 Sauvegarde : copier le dossier `--donnees`. Rien d'autre n'est à conserver.
 

@@ -55,13 +55,22 @@ données ne quittent pas l'appareil.
    et ne laisse qu'une adresse à partager. Voir `serveur/LISEZMOI.md`.
 2. Ouvrir l'application à cette adresse. Elle **détecte son serveur toute
    seule** — rien à saisir.
-3. Réglages → « Créer un espace partagé » : les données affichées y sont
-   déposées et un lien est produit.
-4. Transmettre ce lien. En l'ouvrant, l'autre personne rejoint l'espace.
+3. **Monter un volume sur le dossier des données** (`/donnees` dans l'image).
+   Sans lui, le disque du conteneur est reconstruit à chaque déploiement : les
+   espaces disparaissent et les liens partagés cessent de fonctionner. Le
+   serveur prévient au démarrage quand le dossier semble éphémère, et
+   `serveur/LISEZMOI.md` donne la manipulation par hébergeur.
+4. Plus → Partage & synchronisation → « Créer un espace partagé » : les données
+   affichées y sont déposées et un lien est produit.
+5. Transmettre ce lien. En l'ouvrant, l'autre personne rejoint l'espace.
+
+Si le serveur a perdu ses données malgré tout, un appareil qui connaît encore
+l'espace propose **« Reconstruire l'espace »** : il est recréé avec le même
+identifiant et la même clé, donc les liens déjà envoyés remarchent.
 
 Si l'application est hébergée ailleurs que le serveur (GitHub Pages d'un côté,
 serveur de l'autre), il faut renseigner l'adresse du serveur à la main dans
-Réglages. Tout le reste est identique.
+Plus → Partage & synchronisation. Tout le reste est identique.
 
 Chaque appareil peut connaître plusieurs espaces et basculer de l'un à l'autre
 par le bouton en haut de l'écran. « Cet appareil » désigne les données locales,
@@ -90,5 +99,5 @@ c'est là que la péremption devient un vrai sujet.
 
 ## Sauvegarde
 
-Les données vivent dans le navigateur. L'export JSON (onglet Réglages) est la
+Les données vivent dans le navigateur. L'export JSON (onglet Plus → Sauvegarde & données) est la
 seule sauvegarde : en faire un de temps en temps, et avant toute manipulation.

@@ -141,11 +141,33 @@ const serveur = http.createServer(function (req, res) {
 
   if (chemin === '/api/sante') { repondre(res, 200, { etat: 'ok', version: 1 }); return; }
 
-  // Création d'un espace
+  // Création d'un espace — ou reconstruction d'un espace perdu.
   if (chemin === '/api/espaces' && req.method === 'POST') {
     lireCorps(req).then(function (corps) {
-      const id = identifiantEspace();
-      const cle = crypto.randomBytes(24).toString('base64url');
+      // Reconstruction : un appareil qui détient encore l'identifiant et la clé
+      // d'un espace peut le recréer à l'identique. Connaître les deux, c'est
+      // déjà y avoir accès — le lien de partage ne donne rien de plus. Les
+      // liens déjà distribués continuent donc de fonctionner après une perte
+      // de données côté serveur.
+      const idVoulu = String((corps && corps.id) || '');
+      const cleVoulue = String((corps && corps.cle) || '');
+      let id, cle;
+      if (idVoulu || cleVoulue) {
+        if (!ID_VALIDE.test(idVoulu) || cleVoulue.length < 16) {
+          repondre(res, 400, { erreur: 'identifiant ou clé invalide' });
+          return null;
+        }
+        if (lireEspace(idVoulu)) {
+          // Il existe déjà : rien à reconstruire, l'appareil n'a qu'à se
+          // synchroniser normalement.
+          repondre(res, 409, { erreur: 'cet espace existe déjà' });
+          return null;
+        }
+        id = idVoulu; cle = cleVoulue;
+      } else {
+        id = identifiantEspace();
+        cle = crypto.randomBytes(24).toString('base64url');
+      }
       const espace = {
         id: id, cleEmpreinte: empreinte(cle),
         nom: String((corps && corps.nom) || 'Mon espace').slice(0, 80),
@@ -153,7 +175,7 @@ const serveur = http.createServer(function (req, res) {
         journal: [], creeLe: new Date().toISOString(),
       };
       if (espace.document) espace.version = 1;
-      enFile(id, function () { ecrireEspace(id, espace); }).then(function () {
+      return enFile(id, function () { ecrireEspace(id, espace); }).then(function () {
         repondre(res, 200, { id: id, cle: cle, nom: espace.nom, version: espace.version });
       });
     }).catch(function (e) { repondre(res, 400, { erreur: e.message }); });
@@ -285,8 +307,31 @@ function appliquerOperations(doc, operations) {
   return doc;
 }
 
+/**
+ * Le dossier des données est-il sur le même système de fichiers que la racine ?
+ * Si oui, c'est presque toujours le disque du conteneur : il repart à zéro au
+ * redéploiement, et les espaces avec lui. On ne peut pas l'affirmer — un VPS
+ * ordinaire est dans ce cas sans rien risquer — donc on prévient, sans bloquer.
+ */
+function disqueProbablementEphemere() {
+  try { return fs.statSync(DONNEES).dev === fs.statSync('/').dev; }
+  catch (e) { return false; }
+}
+
 serveur.listen(PORT, HOTE, function () {
   console.log('Synchronisation à l\'écoute sur http://' + HOTE + ':' + PORT);
   console.log('  données  : ' + DONNEES);
   console.log('  statique : ' + (STATIQUE || '(aucun)'));
+  const existants = (function () {
+    try { return fs.readdirSync(DONNEES).filter(function (f) { return /\.json$/.test(f); }).length; }
+    catch (e) { return 0; }
+  })();
+  console.log('  espaces  : ' + existants);
+  if (disqueProbablementEphemere()) {
+    console.warn('');
+    console.warn('  ⚠  ' + DONNEES + ' est sur le disque du conteneur.');
+    console.warn('     Sur un hébergeur au système de fichiers éphémère, les espaces');
+    console.warn('     disparaissent au prochain déploiement. Montez-y un volume.');
+    console.warn('');
+  }
 });
