@@ -380,6 +380,18 @@ label.champ > span{ display:block; font-size:var(--t-petit); font-weight:var(--g
   scrollbar-width:none; -webkit-overflow-scrolling:touch; }
 .filtres.defilante::-webkit-scrollbar{ display:none; }
 .filtres.defilante > *{ flex:0 0 auto; }
+.filtres.actifs{ margin-bottom:var(--e3); }
+.filtres.actifs:empty{ display:none; }
+.panneau-filtres{ margin-bottom:var(--e3); }
+.panneau-filtres[hidden]{ display:none; }
+.bouton-filtres{ flex:0 0 auto; gap:var(--e2); }
+.bouton-filtres.actif{ border-color:var(--accent); color:var(--accent); }
+.bouton-filtres .compteur{ display:inline-flex; align-items:center; justify-content:center;
+  min-width:19px; height:19px; padding:0 5px; border-radius:999px;
+  background:var(--accent); color:var(--accent-texte); font-size:var(--t-micro); font-weight:var(--g-fort); }
+.bouton-filtres .compteur[hidden]{ display:none; }
+.puce-filtre.retirable{ background:var(--accent-doux); border-color:transparent; color:var(--accent); }
+.puce-filtre.retirable .croix{ font-size:.7em; opacity:.75; }
 .puce-filtre{
   display:inline-flex; align-items:center; gap:var(--e1); cursor:pointer; font:inherit;
   background:var(--surface); border:1px solid var(--border); color:var(--texte-doux);
@@ -485,12 +497,26 @@ label.champ > span{ display:block; font-size:var(--t-petit); font-weight:var(--g
 .ajout-manuel input{ flex:1 1 160px; }
 
 /* ——— RECETTES ——— */
-.lignes-ing{ display:flex; flex-direction:column; gap:.4rem; }
-.ligne-ing{ display:grid; gap:.35rem; grid-template-columns:1fr; align-items:start;
-  border:1px solid var(--border); border-radius:8px; padding:.45rem; background:var(--surface-2); }
-@media (min-width:560px){
-  .ligne-ing{ grid-template-columns: minmax(0,1fr) 92px 110px auto auto; align-items:center; }
-  .ligne-ing .zone-fixe .btn.mini{ padding:.2rem .3rem; }
+.lignes-ing{ display:flex; flex-direction:column; gap:var(--e2); }
+.ligne-ing{
+  display:grid; gap:var(--e1) var(--e2); align-items:center;
+  grid-template-columns:78px minmax(0,1fr) auto;
+  grid-template-areas:"ing ing sup" "qte unite outils";
+  border-radius:var(--r-petit); padding:var(--e2); background:var(--surface-2);
+}
+.ligne-ing .ing{ grid-area:ing; }
+.ligne-ing .qte{ grid-area:qte; }
+.ligne-ing .unite{ grid-area:unite; }
+.ligne-ing .sup{ grid-area:sup; width:34px; min-height:34px; padding:0; color:var(--texte-doux); }
+.ligne-ing .sup:hover{ color:var(--danger); }
+.ligne-ing .outils{ grid-area:outils; display:flex; align-items:center; gap:2px; }
+.ligne-ing .qte,.ligne-ing .unite{ min-height:38px; }
+.ligne-ing .outils .btn.mini{ width:30px; min-height:34px; padding:0; }
+.ligne-ing .inline-case{ min-height:34px; gap:var(--e1); }
+.ligne-ing .inline-case input[type="checkbox"]{ width:18px; height:18px; }
+@media (min-width:640px){
+  .ligne-ing{ grid-template-columns:minmax(0,1fr) 92px 110px auto auto;
+    grid-template-areas:"ing qte unite outils sup"; }
 }
 .ligne-ing .zone-fixe{ display:flex; align-items:center; }
 .editeur{ display:grid; gap:0 .6rem; grid-template-columns:1fr; align-items:start; }
@@ -2786,6 +2812,7 @@ const etat = {
   ordreOuvert: false,              // ordre des rayons déplié
   recapOuvert: false,              // détail du récapitulatif de la semaine
   sousVuePlus: null,               // sous-vue ouverte dans l'onglet « Plus »
+  filtresOuverts: false,           // panneau de filtres de l'écran Semaine
   placardOuvert: false,
   ecranAllume: false,
 };
@@ -3114,27 +3141,53 @@ async function daterEntree(entreeId, iso) {
  * appui sur le même jour le remet sans date. Choisir le jour là où on choisit
  * la recette évite d'ouvrir le calendrier pour le geste le plus courant.
  */
-function rangeeJours(entreeId) {
-  const rangee = el('div', { class: 'rangee-jours', role: 'group', 'aria-label': 'Jour du repas' });
+/**
+ * Ajoute ou retire un repas de cette recette à cette date. Une même recette
+ * peut tenir plusieurs jours de la période : chaque jour est un repas.
+ * Éteindre le dernier jour ne sort pas la recette de la semaine — elle
+ * redevient un repas sans jour, et « ✕ » reste le seul moyen de la retirer.
+ */
+async function basculerJour(recetteId, iso) {
+  const entrees = entreesDe(recetteId);
+  const dessus = entrees.find(function (e) { return e.date === iso; });
+  if (dessus) {
+    if (entrees.length === 1) dessus.date = null;
+    else D.semaine.selection = D.semaine.selection.filter(function (s) { return s.id !== dessus.id; });
+  } else {
+    // Un repas déjà retenu sans jour se place ici plutôt que d'en créer un
+    // second : sinon la liste compterait le plat deux fois.
+    const orphelin = entrees.find(function (e) { return !e.date; });
+    if (orphelin) orphelin.date = iso;
+    else {
+      const portions = entrees.length ? entrees[0].portions : (D.reglages.portionsBase || 4);
+      D.semaine.selection.push(nouvelleEntree(recetteId, portions, iso));
+    }
+  }
+  await sauvegarder();
+  rendre();
+}
+
+function rangeeJours(recetteId) {
+  const rangee = el('div', { class: 'rangee-jours', role: 'group', 'aria-label': 'Jours où ce plat est prévu' });
   function peindre() {
     rangee.innerHTML = '';
-    const e = D.semaine.selection.find(function (x) { return x.id === entreeId; });
-    if (!e) return;
+    const dates = new Set(entreesDe(recetteId).map(function (e) { return e.date; }).filter(Boolean));
     const jours = joursDeLaPeriode(D.semaine.periode);
     const avecNumero = jours.length > 7;   // au-delà de la semaine, l'initiale ne suffit plus
     jours.forEach(function (iso) {
       const j = dateDepuisISO(iso);
       if (!j) return;
       const i = (j.getDay() + 6) % 7;
-      const actif = e.date === iso;
+      const actif = dates.has(iso);
+      const quand = JOURS_LONGS[i] + ' ' + j.getDate() + ' ' + MOIS[j.getMonth()];
       const b = el('button', {
         type: 'button', class: 'puce-jour', 'aria-pressed': String(actif),
-        'aria-label': (actif ? 'Retirer du ' : 'Placer le ') + JOURS_LONGS[i] + ' ' + j.getDate() + ' ' + MOIS[j.getMonth()],
+        'aria-label': (actif ? 'Retirer le repas du ' : 'Ajouter un repas le ') + quand,
       }, [
         el('span', { class: 'l', text: JOURS_COURTS[i].charAt(0).toUpperCase() }),
         avecNumero ? el('span', { class: 'n', text: String(j.getDate()) }) : null,
       ]);
-      b.addEventListener('click', async function () { await daterEntree(entreeId, iso); peindre(); });
+      b.addEventListener('click', async function () { await basculerJour(recetteId, iso); peindre(); });
       rangee.appendChild(b);
     });
   }
@@ -3180,7 +3233,6 @@ function vueSemaine() {
   // Recherche : nom, tag ou ingrédient.
   const champRecherche = el('input', { type: 'search', placeholder: 'Nom, tag ou ingrédient…', value: etat.rechercheRecettes, enterkeyhint: 'search', 'aria-label': 'Rechercher une recette par nom, tag ou ingrédient' });
   champRecherche.addEventListener('input', function () { etat.rechercheRecettes = champRecherche.value; remplirCartes(); });
-  champRecherche.style.flex = '1 1 100%';
   const selectTag = el('select', { 'aria-label': 'Filtrer par tag', style: 'flex:1 1 140px' });
   selectTag.appendChild(el('option', { value: '', text: 'Tous les tags' }));
   tousLesTags().forEach(function (t) { selectTag.appendChild(el('option', { value: t, text: t, selected: etat.tagFiltre === t })); });
@@ -3191,13 +3243,30 @@ function vueSemaine() {
     .forEach(function (t) { selectTri.appendChild(el('option', { value: t[0], text: t[1], selected: etat.triRecettes === t[0] })); });
   selectTri.addEventListener('change', function () { etat.triRecettes = selectTri.value; remplirCartes(); });
 
-  v.appendChild(el('div', { class: 'recherche' }, [champRecherche, selectTag, selectTri]));
+  // Trois rangées de réglages avant la première recette, c'était deux de trop.
+  // La recherche reste toujours visible ; le reste se déplie, et ce qui filtre
+  // en ce moment s'affiche en clair même replié — rien ne se cache en douce.
+  const compteurFiltres = el('span', { class: 'compteur', hidden: true });
+  const boutonFiltres = el('button', {
+    type: 'button', class: 'btn bouton-filtres', 'aria-expanded': String(!!etat.filtresOuverts),
+    'aria-controls': 'panneau-filtres',
+  }, [el('span', { text: 'Filtres' }), compteurFiltres]);
+  v.appendChild(el('div', { class: 'recherche' }, [champRecherche, boutonFiltres]));
 
-  // Filtres : les questions qu'on se pose vraiment au moment de composer.
-  // Une rangée qui défile plutôt que deux qui s'empilent : chaque rangée en
-  // haut de l'écran, c'est une recette de moins qu'on voit.
-  const zoneFiltres = el('div', { class: 'filtres defilante' });
-  v.appendChild(zoneFiltres);
+  const panneauFiltres = el('div', { class: 'panneau-filtres', id: 'panneau-filtres', hidden: !etat.filtresOuverts }, [
+    el('div', { class: 'ligne-champs', style: 'margin-bottom:.5rem' }, [selectTag, selectTri]),
+  ]);
+  const zoneFiltres = el('div', { class: 'filtres defilante', style: 'margin:0' });
+  panneauFiltres.appendChild(zoneFiltres);
+  v.appendChild(panneauFiltres);
+  boutonFiltres.addEventListener('click', function () {
+    etat.filtresOuverts = !etat.filtresOuverts;
+    panneauFiltres.hidden = !etat.filtresOuverts;
+    boutonFiltres.setAttribute('aria-expanded', String(etat.filtresOuverts));
+  });
+  // Replié, on voit quand même ce qui filtre, et on peut le retirer d'un appui.
+  const zoneActifs = el('div', { class: 'filtres actifs' });
+  v.appendChild(zoneActifs);
 
   const grille = el('div', { class: 'grille-recettes' });
   v.appendChild(grille);
@@ -3240,20 +3309,42 @@ function vueSemaine() {
         etat.filtreSaison = etat.filtreSaison ? '' : saisonDuJour;
         remplirCartes();
       }));
-    const filtre = etat.filtreTempsMax || etat.filtreTemperature || etat.filtreSaison ||
-      etat.tagFiltre || etat.rechercheRecettes.trim();
-    if (filtre) {
-      zoneFiltres.appendChild(el('span', { class: 'tpt doux', style: 'margin-left:.2rem',
-        text: nbTrouvees + ' recette' + (nbTrouvees > 1 ? 's' : '') + ' sur ' + D.recettes.length }));
-      zoneFiltres.appendChild(el('button', {
-        type: 'button', class: 'btn mini fantome', text: 'Tout afficher',
-        onclick: function () {
-          etat.filtreTempsMax = 0; etat.filtreTemperature = ''; etat.filtreSaison = '';
-          etat.tagFiltre = ''; etat.rechercheRecettes = '';
-          champRecherche.value = ''; selectTag.value = '';
-          remplirCartes();
-        },
+    // Ce qui filtre en ce moment, nommé, avec de quoi le retirer.
+    zoneActifs.innerHTML = '';
+    const actifs = [];
+    if (etat.filtreTempsMax) actifs.push({ nom: '≤ ' + etat.filtreTempsMax + ' min', off: function () { etat.filtreTempsMax = 0; } });
+    if (etat.filtreTemperature) actifs.push({ nom: TEMPERATURE_LIBELLE[etat.filtreTemperature], off: function () { etat.filtreTemperature = ''; } });
+    if (etat.filtreSaison) actifs.push({ nom: SAISON_LIBELLE[etat.filtreSaison], off: function () { etat.filtreSaison = ''; } });
+    if (etat.tagFiltre) actifs.push({ nom: etat.tagFiltre, off: function () { etat.tagFiltre = ''; selectTag.value = ''; } });
+    if (etat.rechercheRecettes.trim()) actifs.push({ nom: '« ' + etat.rechercheRecettes.trim() + ' »', off: function () { etat.rechercheRecettes = ''; champRecherche.value = ''; } });
+
+    compteurFiltres.hidden = !actifs.length;
+    compteurFiltres.textContent = actifs.length || '';
+    boutonFiltres.classList.toggle('actif', !!actifs.length);
+
+    if (actifs.length) {
+      actifs.forEach(function (f) {
+        const b = el('button', { type: 'button', class: 'puce-filtre retirable',
+          'aria-label': 'Retirer le filtre ' + f.nom }, [
+          el('span', { text: f.nom }), el('span', { class: 'croix', 'aria-hidden': 'true', text: '✕' }),
+        ]);
+        b.addEventListener('click', function () { f.off(); remplirCartes(); });
+        zoneActifs.appendChild(b);
+      });
+      // Retirer cinq filtres un par un serait pire que le panneau qu'on remplace :
+      // il faut pouvoir tout lever d'un geste. Toujours présent dès qu'un filtre
+      // s'applique — le faire apparaître au deuxième rendrait le geste incertain.
+      zoneActifs.appendChild(el('button', {
+          type: 'button', class: 'btn mini fantome', text: 'Tout afficher',
+          onclick: function () {
+            etat.filtreTempsMax = 0; etat.filtreTemperature = ''; etat.filtreSaison = '';
+            etat.tagFiltre = ''; etat.rechercheRecettes = '';
+            champRecherche.value = ''; selectTag.value = '';
+            remplirCartes();
+          },
       }));
+      zoneActifs.appendChild(el('span', { class: 'tpt doux', style: 'margin-left:.2rem',
+        text: nbTrouvees + ' sur ' + D.recettes.length }));
     }
   }
 
@@ -3336,10 +3427,14 @@ function vueSemaine() {
       nom.setAttribute('aria-label', 'Voir la fiche de ' + r.nom);
       nom.addEventListener('click', function () { apercuRecette(r); });
 
-      const action = (sel && entrees.length > 1)
+      // Le nombre de portions se règle d'un seul geste tant que tous les repas
+      // en ont autant. Dès qu'ils divergent — c'est possible depuis le
+      // calendrier — un seul compteur mentirait, et « Planning » y renvoie.
+      const memesPortions = entrees.every(function (e) { return e.portions === entrees[0].portions; });
+      const action = (sel && !memesPortions)
         ? el('div', { class: 'actions-carte' }, [
             el('button', { type: 'button', class: 'btn mini', text: 'Planning',
-              title: 'Cette recette revient plusieurs fois : ajustez-la dans le calendrier',
+              title: 'Ces repas n\'ont pas le même nombre de portions : ajustez-les dans le calendrier',
               onclick: function () { ouvrirCalendrier(entrees.find(function (e) { return e.date; }) ? entrees.find(function (e) { return e.date; }).date : null); } }),
             el('button', { type: 'button', class: 'btn mini fantome retirer', text: '✕',
               'aria-label': 'Retirer tous les repas de ' + r.nom, onclick: function () { retirerDeSemaine(r.id); } }),
@@ -3360,9 +3455,8 @@ function vueSemaine() {
       grille.appendChild(el('div', { class: 'carte carte-recette' + (sel ? ' selectionnee' : '') }, [
         el('div', { class: 'entete-carte' }, [el('div', { class: 'infos' }, [nom]), action]),
         meta,
-        // Un seul repas : le jour se choisit ici. Plusieurs, seul le calendrier
-        // peut les distinguer, et le bouton « Planning » y mène.
-        (sel && entrees.length === 1) ? rangeeJours(sel.id) : null,
+        // Un appui par jour : la même recette peut tenir plusieurs jours.
+        sel ? rangeeJours(r.id) : null,
       ]));
     });
   }
@@ -3462,9 +3556,9 @@ function apercuRecette(recette) {
 
   // Le jour se règle depuis la fiche aussi : on y arrive souvent avant de
   // savoir quand on cuisinera le plat.
-  if (sel && entreesDe(recette.id).length === 1) {
-    corps.appendChild(el('div', { class: 'tpt doux', style: 'margin:.1rem 0 0', text: 'Jour' }));
-    corps.appendChild(rangeeJours(sel.id));
+  if (sel) {
+    corps.appendChild(el('div', { class: 'tpt doux', style: 'margin:.1rem 0 0', text: 'Jours' }));
+    corps.appendChild(rangeeJours(recette.id));
   }
 
   corps.appendChild(el('h3', { style: 'margin:.2rem 0 0', text: 'Pour ' + portions + ' portion' + (portions > 1 ? 's' : '') }));
@@ -4501,9 +4595,9 @@ function construireEditeurRecette() {
   colonneForm.appendChild(el('div', { class: 'carte' }, [
     el('label', { class: 'champ' }, [el('span', { text: 'Nom de la recette' }), champNom]),
     el('div', { class: 'ligne-champs' }, [
-      el('label', { class: 'champ' }, [el('span', { text: 'Temps de préparation (min)' }), champTemps]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Préparation (min)' }), champTemps]),
       el('label', { class: 'champ' }, [el('span', { text: 'Plat servi' }), champTemperature]),
-      el('label', { class: 'champ' }, [el('span', { text: 'Portions par défaut' }), champPortions]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Portions' }), champPortions]),
     ]),
     el('div', { class: 'champ' }, [
       el('span', { style: 'display:block;font-size:.82rem;font-weight:600;color:var(--texte-doux);margin-bottom:.2rem', text: 'Saisons' }),
@@ -4535,9 +4629,9 @@ function construireEditeurRecette() {
   colonneForm.appendChild(el('div', { class: 'carte' }, [
     titreIngredients,
     el('div', { class: 'barre-portions', style: 'margin-bottom:.5rem' }, [
-      el('label', { class: 'libelle', for: 'base-saisie', text: 'Je saisis les quantités pour' }),
+      el('label', { class: 'libelle', for: 'base-saisie', text: 'Quantités saisies pour' }),
       champBase,
-      el('span', { style: 'flex:0 1 auto;font-weight:650;font-size:.95rem', text: 'portion(s)' }),
+      el('span', { class: 'libelle', style: 'flex:0 0 auto', text: 'portions' }),
     ]),
     conteneurLignes,
     el('div', { class: 'barre-actions', style: 'margin-top:.5rem' }, [
@@ -4692,12 +4786,28 @@ function rendreLignes(focusCible) {
     const caseFixe = el('input', { type: 'checkbox', checked: !!ligne.fixe, 'aria-label': 'Quantité fixe' });
     caseFixe.addEventListener('change', function () { ligne.fixe = caseFixe.checked; majApercuRecette(); });
 
+    // Deux rangées au lieu de cinq contrôles empilés : l'ingrédient en haut,
+    // ce qui le quantifie en dessous. Une ligne passe de 230 à 100 px, et une
+    // recette de sept ingrédients tient à l'écran.
+    boiteIng.classList.add('ing');
+    champQte.classList.add('qte');
+    champUnite.classList.add('unite');
     const bloc = el('div', { class: 'ligne-ing' }, [
       boiteIng,
+      el('button', {
+        type: 'button', class: 'btn mini fantome sup', text: '✕', 'aria-label': 'Supprimer la ligne',
+        onclick: function () {
+          r.lignes.splice(index, 1);
+          if (!r.lignes.length) r.lignes.push(ligneVide());
+          rendreLignes();
+          majApercuRecette();
+        },
+      }),
       champQte,
       champUnite,
-      el('label', { class: 'inline-case zone-fixe', title: 'Ne se multiplie pas avec les portions' }, [caseFixe, el('span', { class: 'tpt', text: 'fixe' })]),
-      el('div', { class: 'zone-fixe', style: 'gap:.1rem' }, [
+      el('div', { class: 'outils' }, [
+        el('label', { class: 'inline-case zone-fixe', title: 'Ne se multiplie pas avec les portions' },
+          [caseFixe, el('span', { class: 'tpt', text: 'fixe' })]),
         el('button', {
           type: 'button', class: 'btn mini fantome', text: '↑', 'aria-label': 'Monter la ligne',
           disabled: index === 0,
@@ -4707,15 +4817,6 @@ function rendreLignes(focusCible) {
           type: 'button', class: 'btn mini fantome', text: '↓', 'aria-label': 'Descendre la ligne',
           disabled: index === r.lignes.length - 1,
           onclick: function () { deplacerLigne(index, index + 1); },
-        }),
-        el('button', {
-          type: 'button', class: 'btn mini fantome', text: '✕', 'aria-label': 'Supprimer la ligne',
-          onclick: function () {
-            r.lignes.splice(index, 1);
-            if (!r.lignes.length) r.lignes.push(ligneVide());
-            rendreLignes();
-            majApercuRecette();
-          },
         }),
       ]),
     ]);
@@ -5587,7 +5688,7 @@ function ecranConfirmationImport(texte, nomFichier) {
     ['Semaines types', D.semainesTypes.length, apercu.semainesTypes.length],
     ['Semaines dans l\'historique', D.historique.length, apercu.historique.length],
   ].forEach(function (l) {
-    tableau.appendChild(el('div', { class: 'ligne-ing', style: 'grid-template-columns:1fr auto' }, [
+    tableau.appendChild(el('div', { class: 'ligne-ing', style: 'grid-template-columns:1fr auto;grid-template-areas:none' }, [
       el('span', { text: l[0] }),
       el('span', { class: 'gras', text: l[1] + ' → ' + l[2] }),
     ]));
