@@ -4329,9 +4329,33 @@ function listeEnTexte() {
 }
 
 /**
- * Remet le plan au calendrier du téléphone. Trois chemins, du meilleur au
- * dernier recours : le menu de partage (c'est lui qui propose « Calendrier »),
- * un téléchargement que le système ouvre, puis un lien à ouvrir à la main.
+ * Dépose le fichier auprès du service worker, qui le servira en
+ * « text/calendar ». C'est ce type MIME qui déclenche « Ajouter tous à
+ * Calendrier » ; un blob fabriqué dans la page ne l'obtient pas toujours.
+ * → l'adresse à ouvrir, ou null si aucun service worker ne contrôle la page.
+ */
+async function deposerCalendrier(ics) {
+  const sw = navigator.serviceWorker;
+  if (!sw || !sw.controller) return null;
+  try {
+    const reponse = await new Promise(function (resoudre) {
+      const canal = new MessageChannel();
+      const minuteur = setTimeout(function () { resoudre(null); }, 3000);
+      canal.port1.onmessage = function (ev) { clearTimeout(minuteur); resoudre(ev.data); };
+      sw.controller.postMessage({ type: 'CALENDRIER', ics: ics }, [canal.port2]);
+    });
+    return (reponse && reponse.ok) ? new URL('./repas.ics', location.href).href : null;
+  } catch (e) { return null; }
+}
+
+/**
+ * Remet le plan au calendrier du téléphone.
+ *
+ * Aucune API web ne permet d'écrire dans le calendrier : ni sur iOS ni sur
+ * Android, seule une application native le peut. On passe donc par un fichier
+ * iCalendar. Et surtout pas par le menu de partage : Calendrier n'y figure pas
+ * — sur iOS un « .ics » s'OUVRE, il ne se partage pas. C'est pourquoi cet
+ * écran propose un lien à toucher plutôt qu'un automatisme.
  */
 async function ajouterAuCalendrier() {
   const plan = planEnIcs(D, {});
@@ -4341,51 +4365,55 @@ async function ajouterAuCalendrier() {
   }
   const nomFichier = 'repas-' + D.semaine.periode.debut + '.ics';
   const contenu = new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' });
-  let livre = false;
+  const urlBlob = URL.createObjectURL(contenu);
+  const urlServie = await deposerCalendrier(plan.texte);
 
-  try {
-    if (navigator.share && navigator.canShare) {
-      const f = new File([contenu], nomFichier, { type: 'text/calendar' });
-      if (navigator.canShare({ files: [f] })) {
-        await navigator.share({ files: [f], title: 'Repas de la semaine' });
-        livre = true;
-      }
-    }
-  } catch (e) {
-    // Menu refermé sans choisir : rien n'est parti, donc rien à mémoriser.
-    if (e && e.name === 'AbortError') return;
+  let enregistre = false;
+  async function memoriser() {
+    if (enregistre) return;
+    enregistre = true;
+    D.reglages.calendrierExporte = plan.exportes;
+    await sauvegarder();
   }
 
-  if (!livre) {
-    try {
-      const url = URL.createObjectURL(contenu);
-      const a = el('a', { href: url, download: nomFichier });
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
-      livre = true;
-    } catch (e) { livre = false; }
-  }
+  const resume = plan.nb + ' repas' +
+    (D.reglages.rappelMinutes ? ' · rappel ' + libelleRappel(D.reglages.rappelMinutes) : '') +
+    (plan.annules ? ' · ' + plan.annules + ' annulé' + (plan.annules > 1 ? 's' : '') : '');
 
-  if (!livre) {
-    const url = URL.createObjectURL(contenu);
-    ouvrirModale({
-      titre: 'Ajouter au calendrier',
-      corps: [el('p', { class: 'pt', text: 'Ouvrez ce fichier pour l\'ajouter à votre calendrier.' }),
-        el('a', { href: url, download: nomFichier, class: 'btn principal',
-          style: 'text-decoration:none', text: nomFichier })],
-      actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
-    });
+  const actions = el('div', { class: 'menu-actions' });
+  if (urlServie) {
+    const ouvrir = el('a', {
+      href: urlServie, class: 'btn principal', style: 'text-decoration:none',
+      target: '_blank', rel: 'noopener',
+    }, [icone('calendrier'), el('span', { text: 'Ouvrir dans le calendrier' })]);
+    ouvrir.addEventListener('click', function () { memoriser(); fermerModale(); });
+    actions.appendChild(ouvrir);
   }
+  const telecharger = el('a', {
+    href: urlBlob, download: nomFichier, class: 'btn' + (urlServie ? '' : ' principal'),
+    style: 'text-decoration:none',
+  }, [icone('telecharger'), el('span', { text: 'Télécharger le fichier' })]);
+  telecharger.addEventListener('click', function () { memoriser(); fermerModale(); });
+  actions.appendChild(telecharger);
 
-  // Mémorisé après coup : réexporter mettra les événements à jour au lieu de
-  // les dupliquer, et un repas retiré ressortira annulé.
-  D.reglages.calendrierExporte = plan.exportes;
-  await sauvegarder();
-  const dit = [plan.nb + ' repas'];
-  if (plan.annules) dit.push(plan.annules + ' annulé' + (plan.annules > 1 ? 's' : ''));
-  toast(dit.join(' · ') + ' — à ajouter dans votre calendrier.');
+  ouvrirModale({
+    titre: 'Ajouter au calendrier',
+    corps: [
+      el('p', { class: 'pt doux', style: 'margin:0 0 .6rem', text: resume }),
+      actions,
+    ],
+    actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
+  });
+  setTimeout(function () { URL.revokeObjectURL(urlBlob); }, 120000);
+}
+
+/** « 1 heure », « 30 minutes »… pour dire le rappel dans une phrase. */
+function libelleRappel(minutes) {
+  const m = Number(minutes) || 0;
+  if (!m) return 'aucun';
+  if (m < 60) return m + ' minutes';
+  const h = m / 60;
+  return (Number.isInteger(h) ? h : h.toFixed(1).replace('.', ',')) + (h > 1 ? ' heures' : ' heure');
 }
 
 /* --- Partager une recette --------------------------------------------------

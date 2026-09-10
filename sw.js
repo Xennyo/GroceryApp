@@ -4,7 +4,7 @@
    Bump de VERSION à chaque livraison : c'est ce qui déclenche une réinstallation. */
 'use strict';
 
-const VERSION = 'v10';
+const VERSION = 'v11';
 const CACHE = 'liste-courses-' + VERSION;
 
 const COQUILLE = [
@@ -43,7 +43,25 @@ self.addEventListener('activate', function (ev) {
 });
 
 self.addEventListener('message', function (ev) {
-  if (ev.data && ev.data.type === 'ACTIVER') self.skipWaiting();
+  if (!ev.data) return;
+  if (ev.data.type === 'ACTIVER') { self.skipWaiting(); return; }
+  if (ev.data.type === 'CALENDRIER') {
+    // On accuse réception : la page ne doit pas ouvrir l'adresse avant que le
+    // fichier y soit, sans quoi elle tomberait sur un 404.
+    const repondre = function (ok) {
+      if (ev.ports && ev.ports[0]) ev.ports[0].postMessage({ ok: ok });
+    };
+    ev.waitUntil(
+      caches.open(CACHE).then(function (c) {
+        return c.put(CHEMIN_CALENDRIER, new Response(ev.data.ics, {
+          headers: {
+            'Content-Type': 'text/calendar; charset=utf-8',
+            'Cache-Control': 'no-store',
+          },
+        }));
+      }).then(function () { repondre(true); }, function () { repondre(false); })
+    );
+  }
 });
 
 // Chemins que l'on accepte de servir depuis le cache. Tout le reste passe au
@@ -54,12 +72,34 @@ const CHEMINS_COQUILLE = new Set(COQUILLE.map(function (u) {
   return new URL(u, self.location).pathname;
 }));
 
+/* Le plan de repas, servi avec son vrai type MIME.
+   iOS n'ajoute au calendrier qu'un fichier qu'il OUVRE en « text/calendar » :
+   le menu de partage ne propose pas Calendrier, et un blob fabriqué dans la
+   page n'a pas toujours un type que le système reconnaît. La page dépose donc
+   le fichier ici, et le service worker le sert comme le ferait un serveur. */
+const CHEMIN_CALENDRIER = new URL('./repas.ics', self.location).pathname;
+
 self.addEventListener('fetch', function (ev) {
   const req = ev.request;
   if (req.method !== 'GET') return;
 
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
+
+  // Avant tout le reste : c'est une navigation, mais elle ne doit pas passer
+  // par le réseau — le fichier n'existe que dans le cache.
+  if (url.pathname === CHEMIN_CALENDRIER) {
+    ev.respondWith(
+      caches.open(CACHE)
+        .then(function (c) { return c.match(CHEMIN_CALENDRIER); })
+        .then(function (r) {
+          return r || new Response('Aucun plan de repas à ajouter.', {
+            status: 404, headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+          });
+        })
+    );
+    return;
+  }
 
   if (req.mode === 'navigate') {
     ev.respondWith(
