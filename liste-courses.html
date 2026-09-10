@@ -4329,33 +4329,14 @@ function listeEnTexte() {
 }
 
 /**
- * Dépose le fichier auprès du service worker, qui le servira en
- * « text/calendar ». C'est ce type MIME qui déclenche « Ajouter tous à
- * Calendrier » ; un blob fabriqué dans la page ne l'obtient pas toujours.
- * → l'adresse à ouvrir, ou null si aucun service worker ne contrôle la page.
- */
-async function deposerCalendrier(ics) {
-  const sw = navigator.serviceWorker;
-  if (!sw || !sw.controller) return null;
-  try {
-    const reponse = await new Promise(function (resoudre) {
-      const canal = new MessageChannel();
-      const minuteur = setTimeout(function () { resoudre(null); }, 3000);
-      canal.port1.onmessage = function (ev) { clearTimeout(minuteur); resoudre(ev.data); };
-      sw.controller.postMessage({ type: 'CALENDRIER', ics: ics }, [canal.port2]);
-    });
-    return (reponse && reponse.ok) ? new URL('./repas.ics', location.href).href : null;
-  } catch (e) { return null; }
-}
-
-/**
  * Remet le plan au calendrier du téléphone.
  *
  * Aucune API web ne permet d'écrire dans le calendrier : ni sur iOS ni sur
  * Android, seule une application native le peut. On passe donc par un fichier
- * iCalendar. Et surtout pas par le menu de partage : Calendrier n'y figure pas
- * — sur iOS un « .ics » s'OUVRE, il ne se partage pas. C'est pourquoi cet
- * écran propose un lien à toucher plutôt qu'un automatisme.
+ * iCalendar téléchargé — pas par le menu de partage, où Calendrier ne figure
+ * pas, et pas par une adresse à ouvrir : le navigateur n'a pas de visionneuse
+ * pour « text/calendar » et n'affiche qu'une page blanche. Un téléchargement,
+ * lui, arrive dans Fichiers, et l'ouvrir propose « Ajouter tous à Calendrier ».
  */
 async function ajouterAuCalendrier() {
   const plan = planEnIcs(D, {});
@@ -4364,47 +4345,34 @@ async function ajouterAuCalendrier() {
     return;
   }
   const nomFichier = 'repas-' + D.semaine.periode.debut + '.ics';
-  const contenu = new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' });
-  const urlBlob = URL.createObjectURL(contenu);
-  const urlServie = await deposerCalendrier(plan.texte);
-
-  let enregistre = false;
-  async function memoriser() {
-    if (enregistre) return;
-    enregistre = true;
-    D.reglages.calendrierExporte = plan.exportes;
-    await sauvegarder();
-  }
+  const url = URL.createObjectURL(new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' }));
 
   const resume = plan.nb + ' repas' +
     (D.reglages.rappelMinutes ? ' · rappel ' + libelleRappel(D.reglages.rappelMinutes) : '') +
     (plan.annules ? ' · ' + plan.annules + ' annulé' + (plan.annules > 1 ? 's' : '') : '');
 
-  const actions = el('div', { class: 'menu-actions' });
-  if (urlServie) {
-    const ouvrir = el('a', {
-      href: urlServie, class: 'btn principal', style: 'text-decoration:none',
-      target: '_blank', rel: 'noopener',
-    }, [icone('calendrier'), el('span', { text: 'Ouvrir dans le calendrier' })]);
-    ouvrir.addEventListener('click', function () { memoriser(); fermerModale(); });
-    actions.appendChild(ouvrir);
-  }
-  const telecharger = el('a', {
-    href: urlBlob, download: nomFichier, class: 'btn' + (urlServie ? '' : ' principal'),
-    style: 'text-decoration:none',
-  }, [icone('telecharger'), el('span', { text: 'Télécharger le fichier' })]);
-  telecharger.addEventListener('click', function () { memoriser(); fermerModale(); });
-  actions.appendChild(telecharger);
+  const lien = el('a', {
+    href: url, download: nomFichier, class: 'btn principal', style: 'text-decoration:none',
+  }, [icone('calendrier'), el('span', { text: 'Ajouter au calendrier' })]);
+  // Mémorisé au moment où le fichier part : réexporter mettra les événements à
+  // jour au lieu de les dupliquer. Fermer sans rien prendre ne mémorise rien.
+  lien.addEventListener('click', async function () {
+    fermerModale();
+    D.reglages.calendrierExporte = plan.exportes;
+    await sauvegarder();
+  });
 
   ouvrirModale({
     titre: 'Ajouter au calendrier',
     corps: [
-      el('p', { class: 'pt doux', style: 'margin:0 0 .6rem', text: resume }),
-      actions,
+      el('p', { class: 'pt doux', style: 'margin:0 0 .2rem', text: resume }),
+      el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
+        text: 'Touchez ensuite le fichier téléchargé : votre calendrier proposera de tout ajouter.' }),
+      el('div', { class: 'menu-actions' }, [lien]),
     ],
     actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
   });
-  setTimeout(function () { URL.revokeObjectURL(urlBlob); }, 120000);
+  setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
 }
 
 /** « 1 heure », « 30 minutes »… pour dire le rappel dans une phrase. */
