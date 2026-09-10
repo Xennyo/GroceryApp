@@ -886,6 +886,9 @@ function donneesVides() {
       serveurSync: '',
       heureRepas: '19:30',
       rappelMinutes: 60,
+      // Adresse d'abonnement du calendrier. Partagée avec l'espace : chaque
+      // appareil peut s'abonner sans qu'on la recrée.
+      abonnementCalendrier: '',
       // Ce qui est déjà parti au calendrier, et sous quelle révision : sans
       // cette mémoire, réexporter dupliquerait tout et un repas retiré de
       // l'application resterait indéfiniment dans le calendrier.
@@ -1082,6 +1085,8 @@ function normaliserRacine(d) {
     portionsBase: (typeof g.portionsBase === 'number' && g.portionsBase > 0) ? Math.min(99, Math.round(g.portionsBase)) : 4,
     serveurSync: (typeof g.serveurSync === 'string') ? g.serveurSync.replace(/\/+$/, '') : '',
     heureRepas: /^([01]\d|2[0-3]):[0-5]\d$/.test(g.heureRepas) ? g.heureRepas : '19:30',
+    abonnementCalendrier: (typeof g.abonnementCalendrier === 'string' &&
+      /^https?:\/\//.test(g.abonnementCalendrier)) ? g.abonnementCalendrier : '',
     rappelMinutes: (typeof g.rappelMinutes === 'number' && g.rappelMinutes >= 0)
       ? Math.min(1440, Math.round(g.rappelMinutes)) : 60,
     calendrierExporte: (g.calendrierExporte && typeof g.calendrierExporte === 'object' && !Array.isArray(g.calendrierExporte))
@@ -1579,6 +1584,46 @@ const Store = (function () {
       demarrerSondage();
       signalerEtat('synchronise');
       return etat;
+    },
+
+    /* --- Abonnement du calendrier --------------------------------------
+       Un calendrier abonné relit une adresse tout seul et remplace son
+       contenu : c'est le seul mécanisme qui propage aussi les suppressions.
+       Il ne sait pas envoyer d'en-tête, d'où un jeton dans l'adresse — à part
+       de la clé de synchronisation, pour être révocable sans casser le
+       partage. C'est l'application qui fabrique le fichier ; le serveur ne
+       fait que le garder, sans quoi il faudrait maintenir deux fois la même
+       logique de génération.
+       ------------------------------------------------------------------- */
+
+    /** Crée ou renouvelle l'abonnement. → { jeton, url } */
+    async creerAbonnementCalendrier(ics) {
+      if (!espaceCourant) throw new Error('Rejoignez un espace partagé d\'abord.');
+      const rep = await fetch(urlEspace('/calendrier'), {
+        method: 'POST', headers: entetes(), body: JSON.stringify({ ics: ics || '' }),
+      });
+      if (!rep.ok) throw new Error('Le serveur a refusé (' + rep.status + ').');
+      return await rep.json();
+    },
+
+    /** Dépose un plan à jour. → true si le serveur l'a pris. */
+    async publierCalendrier(ics) {
+      if (!espaceCourant) return false;
+      try {
+        const rep = await fetch(urlEspace('/calendrier.ics'), {
+          method: 'PUT',
+          headers: { 'Authorization': 'Bearer ' + espaceCourant.cle, 'Content-Type': 'text/calendar' },
+          body: ics,
+        });
+        return rep.ok;
+      } catch (e) { return false; }
+    },
+
+    /** Coupe l'abonnement : l'adresse cesse de répondre, les abonnés se figent. */
+    async revoquerAbonnementCalendrier() {
+      if (!espaceCourant) return false;
+      const rep = await fetch(urlEspace('/calendrier'), { method: 'DELETE', headers: entetes() });
+      return rep.ok;
     },
 
     /** Force un aller-retour avec le serveur. */
@@ -2965,12 +3010,33 @@ const etat = {
   ecranAllume: false,
 };
 
+/* --- Abonnement : tenir le plan déposé à jour -----------------------------
+   Un calendrier abonné relit l'adresse tout seul et remplace son contenu :
+   c'est ce qui fait suivre les suppressions. Encore faut-il que l'adresse dise
+   la vérité — on y redépose donc le plan dès qu'il change.
+   ------------------------------------------------------------------------- */
+let empreinteCalendrierPublie = null;
+let minuteurCalendrier = null;
+function publierCalendrierSiBesoin() {
+  if (!D || !D.reglages.abonnementCalendrier) return;
+  // Sans jour, aucun repas ne part : ce n'est pas une raison de vider
+  // l'abonnement, mais c'est bien ce que le plan dit, donc on le dépose.
+  const plan = planEnIcs(D, { exportes: {} });
+  // L'horodatage change à chaque génération : on compare le reste.
+  const empreinte = plan.texte.replace(/DTSTAMP:[^\r\n]*/g, '');
+  if (empreinte === empreinteCalendrierPublie) return;
+  empreinteCalendrierPublie = empreinte;
+  clearTimeout(minuteurCalendrier);
+  minuteurCalendrier = setTimeout(function () { Store.publierCalendrier(plan.texte); }, 1200);
+}
+
 async function sauvegarder() {
   // Point de passage unique : on en profite pour ne jamais laisser traîner de
   // case cochée sur un article qui a quitté la liste.
   D.semaine.coches = cochesNettoyees(D);
   D.semaine.dateModification = new Date().toISOString();
   await Store.save(D);
+  publierCalendrierSiBesoin();
 }
 
 function appliquerTheme() {
@@ -5640,6 +5706,96 @@ function sectionAffichage() {
   ]);
 }
 
+/**
+ * L'abonnement : le calendrier relit une adresse tout seul, et remplace son
+ * contenu. C'est le seul mécanisme qui fasse suivre les suppressions — un
+ * fichier importé ne sait qu'ajouter et remplacer.
+ */
+function blocAbonnement() {
+  const bloc = el('div', { style: 'margin-top:.8rem;border-top:1px solid var(--border);padding-top:.7rem' });
+  bloc.appendChild(el('div', { class: 'tpt doux', style: 'margin-bottom:.4rem',
+    text: 'Abonnement — le calendrier se met à jour tout seul, suppressions comprises.' }));
+
+  if (!infosEspaces.courant) {
+    bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:0',
+      text: 'Demande un espace partagé : c\'est le serveur que votre téléphone ira relire.' }));
+    return bloc;
+  }
+
+  const adresse = D.reglages.abonnementCalendrier;
+  if (!adresse) {
+    bloc.appendChild(el('button', {
+      type: 'button', class: 'btn', text: 'Créer l\'abonnement', onclick: creerAbonnementCalendrier,
+    }));
+    return bloc;
+  }
+
+  const webcal = adresse.replace(/^https?:/, 'webcal:');
+  bloc.appendChild(el('div', { class: 'barre-actions' }, [
+    el('a', { href: webcal, class: 'btn principal', style: 'text-decoration:none' },
+      [icone('calendrier'), el('span', { text: 'S\'abonner sur cet appareil' })]),
+    el('button', { type: 'button', class: 'btn', text: 'Copier le lien',
+      onclick: function () { copierTexte(adresse, 'Lien d\'abonnement copié.'); } }),
+  ]));
+  bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:.4rem 0 0',
+    text: 'Laissez « Supprimer les alarmes » désactivé, sinon plus de rappel.' }));
+  bloc.appendChild(el('button', {
+    type: 'button', class: 'btn mini fantome danger', style: 'margin-top:.3rem',
+    text: 'Révoquer', title: 'L\'adresse cesse de répondre ; les calendriers déjà abonnés se figent',
+    onclick: revoquerAbonnementCalendrier,
+  }));
+  return bloc;
+}
+
+async function creerAbonnementCalendrier() {
+  try {
+    const plan = planEnIcs(D, { exportes: {} });
+    const r = await Store.creerAbonnementCalendrier(plan.texte);
+    D.reglages.abonnementCalendrier = r.url;
+    empreinteCalendrierPublie = plan.texte.replace(/DTSTAMP:[^\r\n]*/g, '');
+    await sauvegarder();
+    vuePlus();
+    toast('Abonnement créé.');
+  } catch (e) {
+    toast(e.message || 'Impossible de créer l\'abonnement.');
+  }
+}
+
+async function revoquerAbonnementCalendrier() {
+  const ok = await confirmer({
+    titre: 'Révoquer l\'abonnement',
+    message: 'L\'adresse cessera de répondre. Les calendriers déjà abonnés gardent ce qu\'ils ont, ' +
+      'mais ne suivront plus rien.',
+    labelOk: 'Révoquer', danger: true,
+  });
+  if (!ok) return;
+  try { await Store.revoquerAbonnementCalendrier(); } catch (e) { /* le jeton local part quand même */ }
+  D.reglages.abonnementCalendrier = '';
+  empreinteCalendrierPublie = null;
+  await sauvegarder();
+  vuePlus();
+  toast('Abonnement révoqué.');
+}
+
+/** Copie dans le presse-papier, avec repli quand le navigateur refuse. */
+async function copierTexte(texte, message) {
+  try {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      await navigator.clipboard.writeText(texte);
+      toast(message);
+      return;
+    }
+  } catch (e) { /* on montre le texte à la place */ }
+  const champ = el('textarea', { rows: '3' });
+  champ.value = texte;
+  ouvrirModale({
+    titre: 'Lien d\'abonnement',
+    corps: [el('label', { class: 'champ' }, [champ])],
+    actions: [{ label: 'Fermer', variant: 'principal', onClick: function (f) { f(); } }],
+  });
+  setTimeout(function () { champ.select(); }, 0);
+}
+
 /** Ce que le calendrier du téléphone doit savoir : quand, et combien avant. */
 function sectionCalendrier() {
   const champHeure = el('input', { type: 'time', value: D.reglages.heureRepas, style: 'max-width:150px',
@@ -5666,6 +5822,8 @@ function sectionCalendrier() {
       el('label', { class: 'champ' }, [el('span', { text: 'Rappel' }), champRappel]),
     ]),
   ]);
+  carte.appendChild(blocAbonnement());
+
   const nb = Object.keys(D.reglages.calendrierExporte || {}).length;
   if (nb) {
     carte.appendChild(el('div', { class: 'barre-actions' }, [

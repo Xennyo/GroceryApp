@@ -53,6 +53,34 @@ se reproduira au déploiement suivant.
 
 Sauvegarde : copier le dossier `--donnees`. Rien d'autre n'est à conserver.
 
+## Abonnement du calendrier
+
+Un calendrier abonné relit une adresse tout seul et **remplace** son contenu :
+c'est le seul mécanisme qui propage aussi les suppressions, là où un fichier
+importé ne sait qu'ajouter et remplacer.
+
+| Route | Auth | Rôle |
+|---|---|---|
+| `POST /api/espaces/:id/calendrier` | clé de l'espace | crée ou renouvelle le jeton, rend l'adresse |
+| `PUT /api/espaces/:id/calendrier.ics` | clé de l'espace | dépose un plan à jour |
+| `GET /api/espaces/:id/calendrier.ics?jeton=…` | jeton | ce que lit le téléphone |
+| `DELETE /api/espaces/:id/calendrier` | clé de l'espace | révoque |
+
+Le jeton vit dans l'adresse : un abonnement ne sait pas envoyer d'en-tête. Il
+est distinct de la clé de synchronisation, donc révocable sans casser le
+partage. Qui détient l'adresse lit le plan de repas.
+
+C'est l'application qui fabrique le fichier ; le serveur ne fait que le garder.
+Il n'y a donc pas deux versions de la même logique de génération à maintenir
+d'accord.
+
+**Règle qui gouverne le reste : ne jamais servir un calendrier vide par
+erreur.** Espace introuvable, jeton invalide, rien de déposé → une erreur en
+texte brut, jamais un `BEGIN:VCALENDAR` sans événement. Un abonné qui reçoit
+« 0 repas » vide son calendrier, alarmes comprises ; un abonné qui reçoit une
+erreur garde ce qu'il a. Serveur éteint ou données perdues doivent donc figer,
+pas effacer.
+
 ## Sécurité : ce que ce serveur fait et ne fait pas
 
 **Il fait.** Chaque espace a une clé aléatoire de 32 caractères, exigée à chaque

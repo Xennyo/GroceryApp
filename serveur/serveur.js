@@ -70,6 +70,32 @@ function identifiantEspace() {
 
 /* ——— Utilitaires HTTP ——————————————————————————————————————————————————— */
 
+/** Réponse en texte brut. Sert aux erreurs de l'abonnement, qui n'attend pas du JSON. */
+function repondreTexte(res, code, message) {
+  res.writeHead(code, {
+    'Content-Type': 'text/plain; charset=utf-8',
+    'Cache-Control': 'no-store',
+    'Access-Control-Allow-Origin': '*',
+  });
+  res.end(message + '\n');
+}
+
+/** Un calendrier plausible, et pas trop gros. On ne stocke rien d'autre. */
+function valideIcs(texte) {
+  return typeof texte === 'string' &&
+    texte.indexOf('BEGIN:VCALENDAR') === 0 &&
+    texte.indexOf('END:VCALENDAR') > 0 &&
+    Buffer.byteLength(texte) <= 512 * 1024;
+}
+
+/** Adresse d'abonnement, telle que le téléphone devra la demander. */
+function adresseCalendrier(req, id, jeton) {
+  const hote = req.headers.host || ('localhost:' + PORT);
+  const protocole = (req.headers['x-forwarded-proto'] || '').split(',')[0].trim() ||
+    (req.socket && req.socket.encrypted ? 'https' : 'http');
+  return protocole + '://' + hote + '/api/espaces/' + id + '/calendrier.ics?jeton=' + jeton;
+}
+
 function repondre(res, code, corps) {
   const texte = JSON.stringify(corps);
   res.writeHead(code, {
@@ -77,12 +103,13 @@ function repondre(res, code, corps) {
     'Cache-Control': 'no-store',
     'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Headers': 'Authorization, Content-Type',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
   });
   res.end(texte);
 }
 
-function lireCorps(req) {
+/** Corps de la requête. En JSON par défaut, en texte brut si « brut ». */
+function lireCorps(req, brut) {
   return new Promise(function (resoudre, rejeter) {
     let total = 0;
     const morceaux = [];
@@ -92,6 +119,7 @@ function lireCorps(req) {
       morceaux.push(m);
     });
     req.on('end', function () {
+      if (brut) return resoudre(Buffer.concat(morceaux).toString('utf8'));
       if (!morceaux.length) return resoudre({});
       try { resoudre(JSON.parse(Buffer.concat(morceaux).toString('utf8'))); }
       catch (e) { rejeter(new Error('JSON invalide')); }
@@ -179,6 +207,117 @@ const serveur = http.createServer(function (req, res) {
         repondre(res, 200, { id: id, cle: cle, nom: espace.nom, version: espace.version });
       });
     }).catch(function (e) { repondre(res, 400, { erreur: e.message }); });
+    return;
+  }
+
+  /* ——— Calendrier : l'abonnement ————————————————————————————————————————
+     Un calendrier abonné ne sait pas envoyer d'en-tête d'authentification : il
+     ne fait que demander une adresse. Le secret est donc dans l'adresse, et
+     c'est un jeton à part — pas la clé de synchronisation — pour qu'il soit
+     révocable sans casser le partage.
+
+     Règle qui gouverne tout le reste : ne JAMAIS servir un calendrier vide
+     quand quelque chose manque. Un abonnement remplace son contenu par ce
+     qu'il reçoit ; répondre « 0 repas » à cause d'un espace perdu viderait le
+     calendrier de l'abonné, alarmes comprises. Une erreur, elle, le fige.
+     ---------------------------------------------------------------------- */
+  const mcal = chemin.match(/^\/api\/espaces\/([^/]+)\/calendrier(\.ics)?$/);
+  if (mcal) {
+    const id = mcal[1];
+    const surFichier = !!mcal[2];
+    if (!ID_VALIDE.test(id)) { repondre(res, 400, { erreur: 'identifiant invalide' }); return; }
+    const espace = lireEspace(id);
+    if (!espace) {
+      if (surFichier) { repondreTexte(res, 404, 'espace introuvable'); return; }
+      repondre(res, 404, { erreur: 'espace introuvable' });
+      return;
+    }
+
+    // Lecture par l'abonnement : jeton dans l'adresse, rien d'autre.
+    if (surFichier && req.method === 'GET') {
+      const jeton = url.searchParams.get('jeton') || '';
+      if (!espace.calendrier || !espace.calendrier.jetonEmpreinte) {
+        repondreTexte(res, 404, 'aucun abonnement pour cet espace');
+        return;
+      }
+      if (!jeton || empreinte(jeton) !== espace.calendrier.jetonEmpreinte) {
+        repondreTexte(res, 403, 'jeton invalide');
+        return;
+      }
+      if (!espace.calendrier.ics) {
+        // Rien n'a encore été déposé : mieux vaut une erreur qu'un calendrier
+        // vide, qui effacerait ce que l'abonné a déjà.
+        repondreTexte(res, 404, 'aucun plan déposé');
+        return;
+      }
+      res.writeHead(200, {
+        'Content-Type': 'text/calendar; charset=utf-8',
+        'Cache-Control': 'no-cache',
+        'Access-Control-Allow-Origin': '*',
+      });
+      res.end(espace.calendrier.ics);
+      return;
+    }
+
+    // Le reste passe par la clé de l'espace.
+    const cle = cleFournie(req);
+    if (!cle || empreinte(cle) !== espace.cleEmpreinte) { repondre(res, 401, { erreur: 'clé invalide' }); return; }
+
+    // Créer ou renouveler le jeton d'abonnement.
+    if (!surFichier && req.method === 'POST') {
+      lireCorps(req).then(function (corps) {
+        return enFile(id, function () {
+          const frais = lireEspace(id);
+          if (!frais) throw new Error('espace introuvable');
+          const jeton = crypto.randomBytes(18).toString('base64url');
+          const ics = typeof (corps && corps.ics) === 'string' ? corps.ics : '';
+          frais.calendrier = {
+            jetonEmpreinte: empreinte(jeton),
+            ics: valideIcs(ics) ? ics : (frais.calendrier && frais.calendrier.ics) || '',
+            maj: new Date().toISOString(),
+          };
+          ecrireEspace(id, frais);
+          return { jeton: jeton, url: adresseCalendrier(req, id, jeton) };
+        });
+      }).then(function (r) { repondre(res, 200, r); })
+        .catch(function (e) { repondre(res, 400, { erreur: e.message }); });
+      return;
+    }
+
+    // Déposer un plan à jour. C'est l'application qui l'a fabriqué : le serveur
+    // ne recalcule rien, il n'y a donc pas deux versions de la même logique à
+    // maintenir d'accord.
+    if (surFichier && req.method === 'PUT') {
+      lireCorps(req, true).then(function (texte) {
+        if (!valideIcs(texte)) throw new Error('calendrier invalide');
+        return enFile(id, function () {
+          const frais = lireEspace(id);
+          if (!frais) throw new Error('espace introuvable');
+          if (!frais.calendrier || !frais.calendrier.jetonEmpreinte) throw new Error('aucun abonnement');
+          frais.calendrier.ics = texte;
+          frais.calendrier.maj = new Date().toISOString();
+          ecrireEspace(id, frais);
+          return { maj: frais.calendrier.maj, octets: Buffer.byteLength(texte) };
+        });
+      }).then(function (r) { repondre(res, 200, r); })
+        .catch(function (e) { repondre(res, 400, { erreur: e.message }); });
+      return;
+    }
+
+    // Révoquer : l'adresse cesse de répondre, les abonnés se figent.
+    if (!surFichier && req.method === 'DELETE') {
+      enFile(id, function () {
+        const frais = lireEspace(id);
+        if (!frais) throw new Error('espace introuvable');
+        delete frais.calendrier;
+        ecrireEspace(id, frais);
+        return {};
+      }).then(function () { repondre(res, 200, { revoque: true }); })
+        .catch(function (e) { repondre(res, 400, { erreur: e.message }); });
+      return;
+    }
+
+    repondre(res, 405, { erreur: 'méthode non autorisée' });
     return;
   }
 
