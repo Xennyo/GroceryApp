@@ -24,77 +24,97 @@
    ========================================================================= */
 :root{
   color-scheme: light;
-  --bg:#ffffff;
-  --bg-alt:#f2f4f6;
+  --bg:#f4f6f8;
+  --bg-alt:#eaeef2;
   --surface:#ffffff;
-  --surface-2:#f7f8fa;
-  --border:#d6dae0;
-  --border-fort:#aab2bd;
-  --texte:#15181d;
-  --texte-doux:#565d6b;
+  --surface-2:#f4f6f8;
+  --border:#e3e8ed;
+  --border-fort:#c3ccd6;
+  --texte:#12161c;
+  --texte-doux:#5d6673;
   --accent:#0a6b4c;
   --accent-doux:#e2f1ea;
   --accent-texte:#ffffff;
   --danger:#a4231c;
   --danger-doux:#fbeceb;
-  --ombre:0 1px 2px rgba(16,20,26,.08), 0 2px 10px rgba(16,20,26,.05);
-  --r:10px;
+  --ombre:0 1px 2px rgba(16,20,26,.06), 0 1px 3px rgba(16,20,26,.04);
+  --ombre-haute:0 -1px 3px rgba(16,20,26,.05), 0 -6px 24px rgba(16,20,26,.07);
+  --r:14px;
+  --r-petit:9px;
   --tap:44px;
+
+  /* Échelle typographique. Cinq tailles, trois graisses : au-delà, plus rien
+     ne ressort. Le contenu porte le gras, jamais l'habillage. */
+  --t-micro:.75rem;      /* 12 px — compteurs, légendes */
+  --t-petit:.8125rem;    /* 13 px — métadonnées */
+  --t-base:.9375rem;     /* 15 px — texte courant */
+  --t-fort:1.0625rem;    /* 17 px — noms, titres de carte */
+  --t-titre:1.25rem;     /* 20 px — titres d'écran */
+  --g-normal:400;
+  --g-moyen:600;
+  --g-fort:700;
+
+  /* Rythme d'espacement : quatre valeurs, pas douze. */
+  --e1:.25rem; --e2:.5rem; --e3:.75rem; --e4:1rem; --e6:1.5rem;
 }
 @media (prefers-color-scheme: dark){
   :root:not([data-theme="clair"]){
     color-scheme: dark;
-    --bg:#101317;
-    --bg-alt:#171b21;
-    --surface:#1a1f26;
-    --surface-2:#20262e;
-    --border:#333b45;
-    --border-fort:#59636f;
+    --bg:#0d1014;
+    --bg-alt:#161a20;
+    --surface:#181c22;
+    --surface-2:#1f242c;
+    --border:#272d36;
+    --border-fort:#4b5561;
     --texte:#eef1f5;
-    --texte-doux:#a9b2bf;
+    --texte-doux:#9aa4b2;
     --accent:#5cd6a0;
-    --accent-doux:#12302a;
+    --accent-doux:#132f28;
     --accent-texte:#07160f;
     --danger:#ff9a91;
-    --danger-doux:#3a1c19;
-    --ombre:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+    --danger-doux:#391d1a;
+    --ombre:0 1px 2px rgba(0,0,0,.4);
+    --ombre-haute:0 -1px 3px rgba(0,0,0,.4), 0 -6px 24px rgba(0,0,0,.5);
   }
 }
 :root[data-theme="sombre"]{
   color-scheme: dark;
-  --bg:#101317;
-  --bg-alt:#171b21;
-  --surface:#1a1f26;
-  --surface-2:#20262e;
-  --border:#333b45;
-  --border-fort:#59636f;
+  --bg:#0d1014;
+  --bg-alt:#161a20;
+  --surface:#181c22;
+  --surface-2:#1f242c;
+  --border:#272d36;
+  --border-fort:#4b5561;
   --texte:#eef1f5;
-  --texte-doux:#a9b2bf;
+  --texte-doux:#9aa4b2;
   --accent:#5cd6a0;
-  --accent-doux:#12302a;
+  --accent-doux:#132f28;
   --accent-texte:#07160f;
   --danger:#ff9a91;
-  --danger-doux:#3a1c19;
-  --ombre:0 1px 2px rgba(0,0,0,.5), 0 2px 10px rgba(0,0,0,.35);
+  --danger-doux:#391d1a;
+  --ombre:0 1px 2px rgba(0,0,0,.4);
+  --ombre-haute:0 -1px 3px rgba(0,0,0,.4), 0 -6px 24px rgba(0,0,0,.5);
 }
 
 /* ——— BASE ——— */
 *,*::before,*::after{ box-sizing:border-box; }
 html,body{ margin:0; padding:0; }
 body{
-  background:var(--bg-alt);
+  background:var(--bg);
   color:var(--texte);
   font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
-  font-size:16px;
-  line-height:1.45;
+  font-size:var(--t-base);
+  line-height:1.5;
   -webkit-text-size-adjust:100%;
   overflow-x:hidden;
+  -webkit-font-smoothing:antialiased;
 }
-h1,h2,h3{ line-height:1.25; margin:0 0 .5rem; }
-h1{ font-size:1.25rem; }
-h2{ font-size:1.05rem; }
-h3{ font-size:.95rem; }
-p{ margin:.35rem 0; }
+h1,h2,h3{ line-height:1.3; margin:0 0 var(--e2); font-weight:var(--g-fort);
+  letter-spacing:-.01em; }
+h1{ font-size:var(--t-titre); }
+h2{ font-size:var(--t-fort); }
+h3{ font-size:var(--t-base); }
+p{ margin:var(--e1) 0; font-size:var(--t-base); }
 a{ color:var(--accent); }
 :focus-visible{ outline:3px solid var(--accent); outline-offset:2px; border-radius:4px; }
 
@@ -106,8 +126,8 @@ a{ color:var(--accent); }
   padding:.5rem .75rem; padding-top:calc(.5rem + env(safe-area-inset-top));
   display:flex; align-items:center; gap:.5rem; min-height:44px;
 }
-.topbar .titre{ font-weight:650; font-size:1.05rem; margin:0; flex:1 1 auto; min-width:0;
-  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.topbar .titre{ font-weight:var(--g-fort); font-size:var(--t-fort); margin:0; flex:1 1 auto; min-width:0;
+  overflow:hidden; text-overflow:ellipsis; white-space:nowrap; letter-spacing:-.01em; }
 /* Sur mobile, la barre du bas nomme déjà l'onglet actif : le titre y ferait
    double emploi et écrase les deux boutons. On le retire de l'affichage sans
    le retirer du document, pour les lecteurs d'écran. */
@@ -116,7 +136,7 @@ a{ color:var(--accent); }
   flex:0 1 auto; min-width:0; display:inline-flex; align-items:center; gap:.35rem;
   background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
   padding:.2rem .6rem; min-height:36px; cursor:pointer; font:inherit; font-size:.82rem;
-  font-weight:600; color:var(--texte); max-width:52%;
+  font-weight:var(--g-moyen); color:var(--texte); max-width:52%;
 }
 .bouton-espace:hover{ border-color:var(--border-fort); }
 .bouton-espace .nom-espace{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -130,18 +150,18 @@ details.section{ background:var(--surface); border:1px solid var(--border); bord
   margin-bottom:.6rem; box-shadow:var(--ombre); overflow:hidden; }
 details.section > summary{
   cursor:pointer; list-style:none; padding:.7rem .75rem; min-height:48px;
-  display:flex; align-items:center; gap:.5rem; font-weight:650; font-size:1.05rem;
+  display:flex; align-items:center; gap:.5rem; font-weight:var(--g-moyen); font-size:1.05rem;
 }
 details.section > summary::-webkit-details-marker{ display:none; }
 details.section > summary::before{ content:"▸"; color:var(--texte-doux); transition:transform 120ms ease; }
 details.section[open] > summary::before{ transform:rotate(90deg); }
-details.section > summary .compte{ margin-left:auto; font-size:.8rem; font-weight:600; color:var(--texte-doux); }
+details.section > summary .compte{ margin-left:auto; font-size:.8rem; font-weight:var(--g-moyen); color:var(--texte-doux); }
 details.section .contenu{ padding:0 .75rem .75rem; }
 .calendrier .periode-achat{ background:var(--surface-2); border-radius:var(--r); padding:.5rem .6rem; }
 .calendrier .periode-ligne{ display:flex; align-items:center; gap:.4rem; }
-.calendrier .periode-nom{ flex:1 1 auto; text-align:center; font-weight:650; font-size:1rem; }
+.calendrier .periode-nom{ flex:1 1 auto; text-align:center; font-weight:var(--g-moyen); font-size:1rem; }
 .grille-mois{ display:grid; grid-template-columns:repeat(7,1fr); gap:3px; }
-.grille-mois .entete-jour{ text-align:center; font-size:.7rem; font-weight:700; color:var(--texte-doux);
+.grille-mois .entete-jour{ text-align:center; font-size:.7rem; font-weight:var(--g-fort); color:var(--texte-doux);
   text-transform:uppercase; letter-spacing:.03em; padding:.2rem 0; }
 .case-jour{
   position:relative; min-height:46px; border:1px solid var(--border); border-radius:8px;
@@ -150,7 +170,7 @@ details.section .contenu{ padding:0 .75rem .75rem; }
   transition:background-color 120ms ease, border-color 120ms ease;
 }
 .case-jour:hover{ border-color:var(--border-fort); }
-.case-jour .num{ font-size:.85rem; font-weight:600; line-height:1.1; }
+.case-jour .num{ font-size:.85rem; font-weight:var(--g-moyen); line-height:1.1; }
 .case-jour .points{ font-size:.7rem; color:var(--accent); line-height:1; letter-spacing:1px; }
 .case-jour.hors-mois{ opacity:.42; }
 .case-jour.dans-periode{ background:var(--accent-doux); border-color:transparent; }
@@ -174,14 +194,14 @@ details.section .contenu{ padding:0 .75rem .75rem; }
   flex:1 1 auto; justify-content:center; display:inline-flex; align-items:center; gap:.3rem;
   background:var(--bg-alt); border:1px solid var(--border); border-radius:999px;
   padding:.2rem .6rem; min-height:36px; cursor:pointer; font:inherit; font-size:.82rem;
-  font-weight:600; color:var(--texte); max-width:58%;
+  font-weight:var(--g-moyen); color:var(--texte); max-width:58%;
 }
 .bouton-calendrier:hover{ border-color:var(--border-fort); }
 .bouton-calendrier .periode{ overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ligne-espace{ display:flex; align-items:center; gap:.5rem; padding:.4rem 0; border-top:1px solid var(--border); }
 .ligne-espace:first-child{ border-top:0; }
 .ligne-espace .nom{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
-.ligne-espace .actuel{ font-weight:700; color:var(--accent); }
+.ligne-espace .actuel{ font-weight:var(--g-fort); color:var(--accent); }
 main{
   flex:1; width:100%; max-width:960px; margin:0 auto;
   padding:.75rem .75rem calc(84px + env(safe-area-inset-bottom));
@@ -196,12 +216,16 @@ main{
 }
 .tabbar button{
   flex:1; min-height:56px; border:0; background:none; color:var(--texte-doux);
-  font:inherit; font-size:.78rem; cursor:pointer;
-  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px;
-  padding:.25rem; transition:color 120ms ease, background-color 120ms ease;
+  font:inherit; font-size:var(--t-micro); font-weight:var(--g-moyen); cursor:pointer;
+  display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;
+  padding:var(--e1); transition:color 120ms ease;
 }
-.tabbar button .ic{ font-size:1.15rem; line-height:1; }
-.tabbar button[aria-current="page"]{ color:var(--accent); font-weight:650; background:var(--accent-doux); }
+/* Les icônes sont dessinées au trait et prennent la couleur du texte : un jeu
+   cohérent, là où les émojis système imposaient leurs couleurs et leur style. */
+.ic{ width:22px; height:22px; flex:0 0 auto; fill:none; stroke:currentColor;
+  stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
+.tabbar button[aria-current="page"]{ color:var(--accent); }
+.tabbar button[aria-current="page"] .ic{ stroke-width:2; }
 
 @media (min-width:900px){
   #app{ flex-direction:row; }
@@ -211,7 +235,8 @@ main{
     padding:.75rem .5rem; gap:.25rem; align-items:stretch;
   }
   .tabbar button{ flex:0 0 auto; min-height:46px; flex-direction:row; justify-content:flex-start;
-    gap:.6rem; font-size:.95rem; padding:0 .75rem; border-radius:var(--r); }
+    gap:var(--e3); font-size:var(--t-base); padding:0 var(--e3); border-radius:var(--r-petit); }
+  .tabbar button[aria-current="page"]{ background:var(--accent-doux); }
   .colonne-principale{ flex:1; min-width:0; display:flex; flex-direction:column; }
   main{ padding-bottom:2rem; }
   .topbar{ padding-top:.5rem; }
@@ -219,62 +244,71 @@ main{
 
 /* ——— COMPOSANTS ——— */
 .carte{
-  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
-  padding:.75rem; margin-bottom:.6rem; box-shadow:var(--ombre);
+  background:var(--surface); border-radius:var(--r);
+  padding:var(--e3); margin-bottom:var(--e2); box-shadow:var(--ombre);
 }
-.carte.plate{ box-shadow:none; }
-.section-titre{ font-size:.78rem; text-transform:uppercase; letter-spacing:.06em;
-  color:var(--texte-doux); font-weight:700; margin:1rem 0 .4rem; }
+.carte.plate{ box-shadow:none; background:var(--surface-2); }
+.section-titre{ font-size:var(--t-micro); text-transform:uppercase; letter-spacing:.07em;
+  color:var(--texte-doux); font-weight:var(--g-moyen); margin:var(--e4) 0 var(--e2); }
 .doux{ color:var(--texte-doux); }
-.pt{ font-size:.85rem; }
-.tpt{ font-size:.78rem; }
-.gras{ font-weight:650; }
-.rien{ color:var(--texte-doux); padding:1.25rem .5rem; text-align:center; }
+.pt{ font-size:var(--t-petit); }
+.tpt{ font-size:var(--t-micro); }
+.gras{ font-weight:var(--g-moyen); }
+.rien{ color:var(--texte-doux); padding:var(--e6) var(--e2); text-align:center; font-size:var(--t-base); }
 
 .btn{
-  font:inherit; font-size:.92rem; font-weight:600; cursor:pointer;
+  font:inherit; font-size:var(--t-base); font-weight:var(--g-moyen); cursor:pointer;
   background:var(--surface-2); color:var(--texte);
-  border:1px solid var(--border-fort); border-radius:var(--r);
-  padding:.5rem .75rem; min-height:var(--tap);
-  display:inline-flex; align-items:center; justify-content:center; gap:.4rem;
+  border:1px solid var(--border); border-radius:var(--r-petit);
+  padding:var(--e2) var(--e3); min-height:var(--tap);
+  display:inline-flex; align-items:center; justify-content:center; gap:var(--e1);
   transition:background-color 120ms ease, border-color 120ms ease, opacity 120ms ease;
 }
-.btn:hover{ background:var(--bg-alt); }
+.btn:hover{ background:var(--bg-alt); border-color:var(--border-fort); }
 .btn:active{ opacity:.75; }
 .btn.principal{ background:var(--accent); color:var(--accent-texte); border-color:var(--accent); }
-.btn.principal:hover{ filter:brightness(1.08); }
-.btn.danger{ color:var(--danger); border-color:var(--danger); background:var(--danger-doux); }
-.btn.mini{ min-height:34px; padding:.2rem .5rem; font-size:.82rem; border-radius:8px; }
+.btn.principal:hover{ filter:brightness(1.08); border-color:var(--accent); }
+/* Une action destructrice se signale par sa couleur de texte, pas par un
+   aplat rouge : sinon c'est elle qu'on voit en premier sur l'écran. */
+.btn.danger{ color:var(--danger); border-color:transparent; background:transparent; }
+.btn.danger:hover{ background:var(--danger-doux); border-color:var(--danger-doux); }
+.btn.mini{ min-height:34px; padding:var(--e1) var(--e2); font-size:var(--t-petit); border-radius:7px; }
 .btn.fantome{ background:transparent; border-color:transparent; }
 .btn.fantome:hover{ background:var(--bg-alt); }
 .btn[disabled]{ opacity:.45; cursor:not-allowed; }
-.barre-actions{ display:flex; flex-wrap:wrap; gap:.4rem; }
+.barre-actions{ display:flex; flex-wrap:wrap; gap:var(--e2); }
 
 input,select,textarea{
   font:inherit; font-size:16px; color:var(--texte); background:var(--surface);
-  border:1px solid var(--border-fort); border-radius:8px; padding:.45rem .55rem;
+  border:1px solid var(--border-fort); border-radius:var(--r-petit); padding:var(--e2);
   min-height:var(--tap); width:100%; max-width:100%;
+  transition:border-color 120ms ease, box-shadow 120ms ease;
 }
-textarea{ min-height:80px; resize:vertical; line-height:1.4; }
-label.champ{ display:block; margin-bottom:.6rem; }
-label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(--texte-doux); margin-bottom:.2rem; }
+input:focus,select:focus,textarea:focus{ border-color:var(--accent); outline:none;
+  box-shadow:0 0 0 3px var(--accent-doux); }
+textarea{ min-height:80px; resize:vertical; line-height:1.5; }
+label.champ{ display:block; margin-bottom:var(--e3); }
+label.champ > span{ display:block; font-size:var(--t-petit); font-weight:var(--g-moyen);
+  color:var(--texte-doux); margin-bottom:var(--e1); }
 .ligne-champs{ display:flex; gap:.5rem; flex-wrap:wrap; }
 .ligne-champs > *{ flex:1 1 140px; min-width:0; }
 .inline-case{ display:inline-flex; align-items:center; gap:.4rem; min-height:var(--tap); cursor:pointer; }
 .inline-case input[type="checkbox"]{ width:22px; height:22px; min-height:0; flex:0 0 auto; accent-color:var(--accent); }
 
 .puce{
-  display:inline-flex; align-items:center; gap:.25rem;
-  background:var(--bg-alt); border:1px solid var(--border); color:var(--texte-doux);
-  border-radius:999px; padding:.1rem .5rem; font-size:.75rem; font-weight:600; white-space:nowrap;
+  display:inline-flex; align-items:center; gap:var(--e1);
+  background:var(--bg-alt); border:1px solid transparent; color:var(--texte-doux);
+  border-radius:999px; padding:.15rem .55rem; font-size:var(--t-micro);
+  font-weight:var(--g-moyen); white-space:nowrap;
 }
 .puce.accent{ background:var(--accent-doux); border-color:transparent; color:var(--accent); }
 .puce.alerte{ background:var(--danger-doux); border-color:transparent; color:var(--danger); }
 .puce-bouton{ cursor:pointer; }
 .puce-bouton:hover{ border-color:var(--border-fort); }
 
-.recherche{ display:flex; gap:.4rem; align-items:center; margin-bottom:.6rem; flex-wrap:wrap; }
+.recherche{ display:flex; gap:var(--e2); align-items:center; margin-bottom:var(--e3); flex-wrap:wrap; }
 .recherche input[type="search"]{ flex:1 1 180px; }
+.recherche input,.recherche select{ min-height:40px; }
 
 /* ——— SEMAINE ——— */
 .grille-recettes{ display:grid; gap:.6rem; grid-template-columns:minmax(0,1fr); }
@@ -283,25 +317,29 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 .carte-recette .entete-carte{ display:flex; align-items:center; gap:.5rem; }
 .carte-recette .infos{ flex:1 1 auto; min-width:0; }
 .carte-recette.selectionnee{ border-color:var(--accent); box-shadow:0 0 0 1px var(--accent) inset; }
-.stepper{ display:inline-flex; align-items:center; border:1px solid var(--border-fort); border-radius:999px; overflow:hidden; background:var(--surface); }
-.stepper button{ border:0; background:none; color:var(--texte); font:inherit; font-size:1.15rem; font-weight:700;
-  width:var(--tap); height:var(--tap); cursor:pointer; line-height:1; }
-.stepper button:hover{ background:var(--bg-alt); }
-.stepper .valeur{ min-width:62px; text-align:center; font-size:.85rem; font-weight:650; padding:0 .2rem; }
-.recap{ position:sticky; bottom:calc(72px + env(safe-area-inset-bottom)); z-index:20; padding:.5rem .6rem; }
-.recap .ligne-resume{ display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; }
-.recap .bascule{ flex:1 1 180px; min-width:0; display:flex; align-items:center; gap:.4rem;
-  background:none; border:0; padding:.2rem 0; min-height:40px; cursor:pointer;
-  font:inherit; font-weight:650; font-size:.95rem; color:var(--texte); text-align:left; }
-.recap .resume{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
-.recap .resume .cout{ color:var(--accent); }
+.stepper{ display:inline-flex; align-items:center; border:1px solid var(--border);
+  border-radius:999px; overflow:hidden; background:var(--surface-2); }
+.stepper button{ border:0; background:none; color:var(--texte-doux); font:inherit; font-size:1.1rem;
+  font-weight:var(--g-moyen); width:38px; height:38px; cursor:pointer; line-height:1; }
+.stepper button:hover{ background:var(--bg-alt); color:var(--texte); }
+.stepper .valeur{ min-width:56px; text-align:center; font-size:var(--t-petit);
+  font-weight:var(--g-moyen); padding:0 var(--e1); }
+/* Le récapitulatif est une barre d'action, pas une carte : il s'ancre en bas,
+   annonce l'état d'un trait, et laisse le bouton être la seule chose colorée. */
+.recap{ position:sticky; bottom:calc(68px + env(safe-area-inset-bottom)); z-index:20;
+  padding:var(--e2) var(--e3); box-shadow:var(--ombre-haute); }
+.recap .ligne-resume{ display:flex; align-items:center; gap:var(--e2); }
+.recap .bascule{ flex:1 1 auto; min-width:0; display:flex; align-items:center; gap:var(--e1);
+  background:none; border:0; padding:0; min-height:40px; cursor:pointer;
+  font:inherit; font-size:var(--t-petit); color:var(--texte-doux); text-align:left; }
+.recap .resume{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.recap .resume .cout{ color:var(--texte); font-weight:var(--g-moyen); }
 .recap .chevron{ flex:0 0 auto; color:var(--texte-doux); transition:transform 120ms ease; }
 .recap .bascule[aria-expanded="true"] .chevron{ transform:rotate(180deg); }
-.recap .actions-recap{ flex:0 0 auto; min-height:40px; }
+.recap .actions-recap{ flex:0 0 auto; min-height:40px; margin:0; white-space:nowrap; }
 .recap .detail[hidden]{ display:none; }
-.recap .detail{ border-top:1px solid var(--border); margin-top:.4rem; padding-top:.4rem; }
-.recap .detail ul{ margin:.1rem 0 .4rem; padding-left:1.1rem; font-size:.9rem; }
-.recap .actions-recap{ margin-top:.45rem; }
+.recap .detail{ border-top:1px solid var(--border); margin-top:var(--e2); padding-top:var(--e2); }
+.recap .detail ul{ margin:var(--e1) 0 var(--e2); padding-left:1.1rem; font-size:var(--t-petit); }
 /* Une recette déjà retenue doit se faire discrète, pas prendre plus de place. */
 .carte-recette{ padding:.55rem .6rem; }
 .carte-recette .meta{ font-size:.8rem; color:var(--texte-doux); display:flex; flex-wrap:wrap;
@@ -322,24 +360,31 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
   border-radius:8px; min-width:34px; min-height:32px;
   transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
-.puce-jour .l{ font-size:.78rem; font-weight:700; }
+.puce-jour .l{ font-size:.78rem; font-weight:var(--g-fort); }
 .puce-jour .n{ font-size:.62rem; }
 .puce-jour:hover{ background:var(--bg-alt); color:var(--texte); }
 .puce-jour[aria-pressed="true"]{ background:var(--accent); border-color:var(--accent); color:var(--accent-texte); }
-.stepper.compact button{ width:36px; height:36px; font-size:1.05rem; }
-.stepper.compact .valeur{ min-width:28px; font-size:.9rem; }
+.stepper.compact button{ width:34px; height:34px; font-size:1rem; }
+.stepper.compact .valeur{ min-width:26px; font-size:var(--t-petit); }
+/* La barre du haut ne mérite pas une carte : c'est un réglage, pas du contenu. */
 .barre-portions{
-  display:flex; align-items:center; gap:.5rem; flex-wrap:wrap;
-  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
-  padding:.4rem .6rem; margin-bottom:.6rem;
+  display:flex; align-items:center; gap:var(--e2); flex-wrap:wrap;
+  padding:0 var(--e1); margin-bottom:var(--e3);
 }
-.barre-portions .libelle{ font-weight:650; font-size:.95rem; flex:1 1 120px; min-width:0; }
-.filtres{ display:flex; flex-wrap:wrap; gap:.3rem; align-items:center; margin-bottom:.6rem; }
+.barre-portions .libelle{ font-weight:var(--g-normal); font-size:var(--t-base);
+  color:var(--texte-doux); flex:1 1 120px; min-width:0; }
+.filtres{ display:flex; flex-wrap:wrap; gap:var(--e1); align-items:center; margin-bottom:var(--e3); }
+.filtres.defilante{ flex-wrap:nowrap; overflow-x:auto; overflow-y:hidden; padding-bottom:2px;
+  margin-left:calc(-1 * var(--e3)); margin-right:calc(-1 * var(--e3));
+  padding-left:var(--e3); padding-right:var(--e3);
+  scrollbar-width:none; -webkit-overflow-scrolling:touch; }
+.filtres.defilante::-webkit-scrollbar{ display:none; }
+.filtres.defilante > *{ flex:0 0 auto; }
 .puce-filtre{
-  display:inline-flex; align-items:center; gap:.25rem; cursor:pointer; font:inherit;
-  background:var(--surface); border:1px solid var(--border-fort); color:var(--texte);
-  border-radius:999px; padding:.3rem .7rem; font-size:.82rem; font-weight:600;
-  min-height:40px; white-space:nowrap;
+  display:inline-flex; align-items:center; gap:var(--e1); cursor:pointer; font:inherit;
+  background:var(--surface); border:1px solid var(--border); color:var(--texte-doux);
+  border-radius:999px; padding:var(--e1) var(--e3); font-size:var(--t-petit); font-weight:var(--g-moyen);
+  min-height:34px; white-space:nowrap;
   transition:background-color 120ms ease, border-color 120ms ease, color 120ms ease;
 }
 .puce-filtre:hover{ background:var(--bg-alt); }
@@ -347,7 +392,7 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 .filtres .separateur{ width:1px; align-self:stretch; background:var(--border); margin:.2rem .15rem; }
 /* Le nom d'une recette ouvre sa fiche : il faut que ça se voie, et au clavier aussi. */
 .carte-recette .nom{
-  font-weight:650; overflow-wrap:anywhere; text-align:left; font:inherit; font-weight:650;
+  font-weight:var(--g-moyen); overflow-wrap:anywhere; text-align:left; font:inherit; font-weight:var(--g-moyen);
   background:none; border:0; padding:0; color:var(--texte); cursor:pointer;
   display:inline-flex; align-items:baseline; gap:.35rem;
 }
@@ -379,9 +424,10 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
   transition:border-color 120ms ease, background-color 120ms ease;
 }
 .tuile-hub:hover{ border-color:var(--accent); background:var(--bg-alt); }
-.tuile-hub .ic{ font-size:1.5rem; line-height:1; flex:0 0 auto; }
+.tuile-hub .ic-tuile{ width:24px; height:24px; color:var(--texte-doux); }
+.tuile-hub:hover .ic-tuile{ color:var(--accent); }
 .tuile-hub .txt{ flex:1 1 auto; min-width:0; display:flex; flex-direction:column; gap:.1rem; }
-.tuile-hub .titre{ font-weight:650; }
+.tuile-hub .titre{ font-weight:var(--g-moyen); }
 .tuile-hub .resume{ font-size:.82rem; color:var(--texte-doux); overflow-wrap:anywhere; }
 .tuile-hub .chev{ flex:0 0 auto; color:var(--texte-doux); font-size:1.2rem; }
 .retour-hub{ margin-bottom:.6rem; }
@@ -389,42 +435,51 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 /* ——— LISTE ——— */
 .entete-liste{
   position:sticky; z-index:25; top:var(--h-topbar, 0px);
-  background:var(--surface); border:1px solid var(--border); border-radius:var(--r);
-  padding:.5rem .7rem; margin:-.1rem 0 .6rem; box-shadow:var(--ombre);
-  font-size:1.02rem; font-weight:650; display:flex; flex-wrap:wrap; gap:.15rem .5rem; align-items:baseline;
+  background:var(--surface); border-radius:var(--r);
+  padding:var(--e2) var(--e3); margin:0 0 var(--e2); box-shadow:var(--ombre);
+  font-size:var(--t-petit); color:var(--texte-doux);
+  display:flex; flex-wrap:wrap; gap:var(--e1) var(--e2); align-items:center;
 }
 @media (min-width:900px){ .entete-liste{ top:calc(var(--h-topbar, 0px) + .25rem); } }
-.entete-liste .reste{ color:var(--accent); }
-.rayon{ background:var(--surface); border:1px solid var(--border); border-radius:var(--r); margin-bottom:.6rem; overflow:hidden; }
+.entete-liste .compte{ font-size:var(--t-fort); font-weight:var(--g-moyen); color:var(--texte);
+  letter-spacing:-.01em; font-variant-numeric:tabular-nums; }
+.entete-liste .reste{ color:var(--texte); font-weight:var(--g-moyen); margin-left:auto; }
+.rayon{ background:var(--surface); border-radius:var(--r); margin-bottom:var(--e2);
+  overflow:hidden; box-shadow:var(--ombre); }
 .rayon > summary{
-  cursor:pointer; list-style:none; padding:.6rem .7rem; font-weight:700; font-size:.9rem;
-  text-transform:uppercase; letter-spacing:.04em; color:var(--texte-doux);
-  background:var(--surface-2); display:flex; align-items:center; gap:.5rem; min-height:44px;
+  cursor:pointer; list-style:none; padding:var(--e2) var(--e3); font-weight:var(--g-moyen);
+  font-size:var(--t-micro); text-transform:uppercase; letter-spacing:.07em; color:var(--texte-doux);
+  display:flex; align-items:center; gap:var(--e2); min-height:40px;
 }
 .rayon > summary::-webkit-details-marker{ display:none; }
-.rayon > summary .compte{ margin-left:auto; font-weight:600; letter-spacing:0; text-transform:none; font-size:.82rem; }
-.rayon > summary::before{ content:"▸"; transition:transform 120ms ease; display:inline-block; }
-.rayon[open] > summary::before{ transform:rotate(90deg); }
-.article{
-  display:flex; align-items:flex-start; gap:.1rem; border-top:1px solid var(--border);
-  font-size:17px;
-}
+.rayon > summary .compte{ margin-left:auto; letter-spacing:0; text-transform:none; font-size:var(--t-petit);
+  font-variant-numeric:tabular-nums; }
+.rayon > summary::before{ content:""; flex:0 0 auto; width:7px; height:7px; display:inline-block;
+  border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor;
+  transform:rotate(-45deg); transition:transform 140ms ease; margin-left:2px; }
+.rayon[open] > summary::before{ transform:rotate(45deg); }
+/* Dans un magasin on cherche le NOM du produit : c'est lui qui porte le gras,
+   la quantité se lit une fois qu'on l'a trouvé. */
+.article{ display:flex; align-items:center; gap:0; border-top:1px solid var(--border); }
 .article .case{
   flex:0 0 auto; width:52px; min-height:52px; display:flex; align-items:center; justify-content:center;
   cursor:pointer; background:none; border:0; padding:0;
 }
-.article .case input[type="checkbox"]{ width:26px; height:26px; min-height:0; accent-color:var(--accent); cursor:pointer; }
+.article .case input[type="checkbox"]{ width:24px; height:24px; min-height:0; accent-color:var(--accent); cursor:pointer; }
 .article .corps{
-  flex:1; min-width:0; text-align:left; background:none; border:0; color:inherit; font:inherit; font-size:17px;
-  padding:.55rem .5rem .55rem 0; cursor:pointer;
-  display:flex; gap:.5rem; align-items:baseline; flex-wrap:wrap;
+  flex:1; min-width:0; text-align:left; background:none; border:0; color:inherit; font:inherit;
+  padding:var(--e2) var(--e3) var(--e2) 0; cursor:pointer;
+  display:flex; gap:var(--e2); align-items:baseline; flex-wrap:wrap;
 }
-.article .nom{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere; }
-.article .qte{ font-weight:650; white-space:nowrap; }
-.article .prix{ color:var(--texte-doux); font-size:.85rem; white-space:nowrap; }
+.article .nom{ flex:1 1 auto; min-width:0; overflow-wrap:anywhere;
+  font-size:var(--t-fort); font-weight:var(--g-moyen); letter-spacing:-.01em; }
+.article .qte{ font-size:var(--t-base); color:var(--texte-doux); white-space:nowrap;
+  font-variant-numeric:tabular-nums; }
+.article .prix{ color:var(--texte-doux); font-size:var(--t-micro); white-space:nowrap;
+  font-variant-numeric:tabular-nums; }
 .article.coche{ background:var(--surface-2); }
-.article.coche .nom,.article.coche .qte{ text-decoration:line-through; color:var(--texte-doux); font-weight:400; }
-.detail-provenance{ padding:0 .6rem .6rem 52px; font-size:.85rem; color:var(--texte-doux); border-top:0; background:var(--surface-2); }
+.article.coche .nom,.article.coche .qte{ text-decoration:line-through; color:var(--texte-doux); font-weight:var(--g-normal); }
+.detail-provenance{ padding:0 var(--e3) var(--e3) 52px; font-size:var(--t-petit); color:var(--texte-doux); border-top:0; background:var(--surface-2); }
 .detail-provenance ul{ margin:.2rem 0 0; padding-left:1.1rem; }
 .ajout-manuel{ display:flex; gap:.4rem; flex-wrap:wrap; }
 .ajout-manuel input{ flex:1 1 160px; }
@@ -446,9 +501,27 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
 .apercu{ background:var(--accent-doux); border-color:transparent; }
 .apercu ul{ margin:.3rem 0 0; padding-left:1.15rem; }
 .avert{ background:var(--danger-doux); color:var(--danger); border:1px solid transparent;
-  border-radius:8px; padding:.5rem .65rem; font-size:.88rem; font-weight:600; }
+  border-radius:8px; padding:.5rem .65rem; font-size:.88rem; font-weight:var(--g-moyen); }
 .rappel{ background:var(--accent-doux); color:var(--accent); border-radius:8px;
-  padding:.5rem .65rem; font-size:.9rem; font-weight:700; margin-bottom:.6rem; }
+  padding:.5rem .65rem; font-size:.9rem; font-weight:var(--g-fort); margin-bottom:.6rem; }
+
+/* Une recette de la bibliothèque tient sur une ligne : nom, métadonnées,
+   et un menu. Le reste vivait en quatre boutons empilés. */
+.carte-recette:has(.ligne-recette){ display:flex; align-items:flex-start; gap:var(--e2);
+  padding:var(--e3) var(--e2) var(--e3) var(--e3); }
+.ligne-recette{ flex:1 1 auto; min-width:0; display:block; text-align:left; cursor:pointer;
+  background:none; border:0; padding:var(--e1) 0; font:inherit; color:var(--texte); }
+.ligne-recette .nom{ font-size:var(--t-fort); font-weight:var(--g-moyen); letter-spacing:-.01em;
+  overflow-wrap:anywhere; }
+.ligne-recette .meta{ font-size:var(--t-petit); color:var(--texte-doux); margin-top:2px;
+  overflow-wrap:anywhere; }
+.ligne-recette:hover .nom{ color:var(--accent); }
+.menu-recette{ flex:0 0 auto; width:40px; min-height:40px; padding:0; color:var(--texte-doux); }
+.menu-recette:hover{ color:var(--texte); }
+.menu-actions{ display:flex; flex-direction:column; gap:var(--e2); }
+.menu-actions .btn{ justify-content:flex-start; gap:var(--e3); padding:var(--e2) var(--e3); }
+.menu-actions .ic{ width:19px; height:19px; color:var(--texte-doux); }
+.menu-actions .btn.danger .ic{ color:var(--danger); }
 
 /* ——— AUTOCOMPLÉTION ——— */
 .ac-boite{ position:relative; }
@@ -462,7 +535,7 @@ label.champ > span{ display:block; font-size:.82rem; font-weight:600; color:var(
   display:flex; align-items:center; gap:.4rem; }
 .ac-item .sec{ margin-left:auto; font-size:.75rem; color:var(--texte-doux); }
 .ac-item.actif{ background:var(--accent-doux); color:var(--accent); }
-.ac-item.creer{ font-weight:650; }
+.ac-item.creer{ font-weight:var(--g-moyen); }
 
 /* ——— TABLEAUX (référentiel) ——— */
 .table-wrap{ overflow-x:auto; -webkit-overflow-scrolling:touch; border:1px solid var(--border); border-radius:var(--r); background:var(--surface); }
@@ -520,24 +593,28 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
 @media (min-width:900px){ #zone-toasts{ bottom:1rem; left:auto; right:1rem; align-items:flex-end; } }
 .toast{
   pointer-events:auto; background:var(--texte); color:var(--bg);
-  border-radius:var(--r); padding:.6rem .8rem; font-size:.92rem; font-weight:600;
+  border-radius:var(--r); padding:.6rem .8rem; font-size:.92rem; font-weight:var(--g-moyen);
   box-shadow:var(--ombre); display:flex; align-items:center; gap:.75rem; max-width:520px; width:100%;
 }
 .toast button{
-  background:none; border:1px solid currentColor; color:inherit; font:inherit; font-weight:700;
+  background:none; border:1px solid currentColor; color:inherit; font:inherit; font-weight:var(--g-fort);
   border-radius:8px; padding:.25rem .6rem; cursor:pointer; min-height:36px; white-space:nowrap;
 }
 #bandeau-degrade{
   background:var(--danger-doux); color:var(--danger); border-bottom:1px solid var(--danger);
-  padding:.5rem .75rem; font-size:.88rem; font-weight:600;
+  padding:.5rem .75rem; font-size:.88rem; font-weight:var(--g-moyen);
 }
 #bandeau-degrade[hidden]{ display:none; }
 .bandeau-exemple{
-  background:var(--accent-doux); border:1px solid transparent; color:var(--accent);
-  border-radius:var(--r); padding:.6rem .7rem; margin-bottom:.6rem;
-  display:flex; gap:.5rem; flex-wrap:wrap; align-items:center; font-size:.9rem; font-weight:600;
+  background:var(--accent-doux); color:var(--accent);
+  border-radius:var(--r-petit); padding:var(--e2) var(--e3); margin-bottom:var(--e2);
+  display:flex; gap:var(--e2); align-items:center;
+  font-size:var(--t-petit); font-weight:var(--g-moyen);
 }
-.bandeau-exemple span{ flex:1 1 200px; }
+.bandeau-exemple span{ flex:1 1 auto; min-width:0; }
+.bandeau-exemple .btn{ flex:0 0 auto; min-height:30px; width:30px; padding:0;
+  background:transparent; border-color:transparent; color:inherit; font-size:1rem; }
+.bandeau-exemple .btn:hover{ background:rgba(0,0,0,.06); }
 
 /* ——— BARRE DE TITRE : AJUSTEMENTS RESPONSIVES ———
    Placés après les composants qu'ils ajustent : à spécificité égale, c'est
@@ -582,10 +659,10 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
 <body>
 <div id="app">
   <nav class="tabbar" id="tabbar" aria-label="Navigation principale">
-    <button type="button" data-tab="semaine" aria-current="page"><span class="ic" aria-hidden="true">🗓️</span>Semaine</button>
-    <button type="button" data-tab="liste"><span class="ic" aria-hidden="true">🛒</span>Liste</button>
-    <button type="button" data-tab="recettes"><span class="ic" aria-hidden="true">📖</span>Recettes</button>
-    <button type="button" data-tab="plus"><span class="ic" aria-hidden="true">⋯</span>Plus</button>
+    <button type="button" data-tab="semaine" aria-current="page"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Semaine</button>
+    <button type="button" data-tab="liste"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 4h2.2l2.4 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/></svg>Liste</button>
+    <button type="button" data-tab="recettes"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5"/><path d="M9 8h6"/></svg>Recettes</button>
+    <button type="button" data-tab="plus"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/></svg>Plus</button>
   </nav>
   <div class="colonne-principale">
     <div id="bandeau-degrade" hidden role="status"></div>
@@ -594,7 +671,7 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
       <div class="nav-periode" id="nav-periode">
         <button type="button" class="fleche" id="periode-avant" aria-label="Période précédente">‹</button>
         <button type="button" class="bouton-calendrier" id="bouton-calendrier" title="Planifier les repas et choisir la période d'achat">
-          <span aria-hidden="true">🗓</span>
+          <svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>
           <span class="periode" id="libelle-periode">Semaine</span>
         </button>
         <button type="button" class="fleche" id="periode-apres" aria-label="Période suivante">›</button>
@@ -2415,6 +2492,39 @@ function esc(txt) {
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+/* --- Icônes ---------------------------------------------------------------
+   Un seul jeu, dessiné au trait, qui prend la couleur du texte. Les émojis
+   système imposaient leurs couleurs et changeaient de style d'une plateforme
+   à l'autre ; ici l'application garde la main.
+   ------------------------------------------------------------------------- */
+const ICONES = {
+  calendrier: '<rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+  panier: '<path d="M3 4h2.2l2.4 11.2a2 2 0 0 0 2 1.6h7.9a2 2 0 0 0 2-1.5L21 8H6.2"/><circle cx="10" cy="20" r="1.4"/><circle cx="18" cy="20" r="1.4"/>',
+  livre: '<path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H19v15H6.5A2.5 2.5 0 0 0 4 20.5z"/><path d="M4 20.5A2.5 2.5 0 0 1 6.5 18H19v3H6.5"/><path d="M9 8h6"/>',
+  points: '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+  reglages: '<circle cx="12" cy="12" r="3.2"/><path d="M12 2.5v2.2M12 19.3v2.2M4.2 4.2l1.6 1.6M18.2 18.2l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.2 19.8l1.6-1.6M18.2 5.8l1.6-1.6"/>',
+  lien: '<path d="M10 13.5a3.5 3.5 0 0 0 5 0l3-3a3.5 3.5 0 0 0-5-5l-1.5 1.5"/><path d="M14 10.5a3.5 3.5 0 0 0-5 0l-3 3a3.5 3.5 0 0 0 5 5l1.5-1.5"/>',
+  archive: '<rect x="3" y="4" width="18" height="4.5" rx="1.5"/><path d="M5 8.5V19a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8.5"/><path d="M10 12.5h4"/>',
+  disque: '<path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M8 3v6h7V3"/><rect x="7" y="13" width="10" height="6" rx="1"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  partage: '<path d="M12 16V4"/><path d="M7.5 8.5 12 4l4.5 4.5"/><path d="M5 14v4.5A1.5 1.5 0 0 0 6.5 20h11a1.5 1.5 0 0 0 1.5-1.5V14"/>',
+  crayon: '<path d="M4 20h4L19.5 8.5a2.1 2.1 0 0 0-3-3L5 17z"/><path d="M14.5 6.5l3 3"/>',
+  coller: '<rect x="8" y="3" width="8" height="4" rx="1.4"/><path d="M8 5H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2h-2"/>',
+  telecharger: '<path d="M12 4v11"/><path d="M7.5 10.5 12 15l4.5-4.5"/><path d="M5 19h14"/>',
+  televerser: '<path d="M12 20V9"/><path d="M7.5 13.5 12 9l4.5 4.5"/><path d="M5 5h14"/>',
+  balai: '<path d="M14 4 9 9"/><path d="M11.5 6.5 17.5 12.5"/><path d="M9.5 8.5 4.2 13.8a2 2 0 0 0 0 2.8l3.2 3.2a2 2 0 0 0 2.8 0l5.3-5.3z"/>',
+  refaire: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>',
+};
+/** Icône du jeu, en SVG. La taille se règle en CSS par la classe. */
+function icone(nom, classe) {
+  const n = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  n.setAttribute('class', 'ic' + (classe ? ' ' + classe : ''));
+  n.setAttribute('viewBox', '0 0 24 24');
+  n.setAttribute('aria-hidden', 'true');
+  n.innerHTML = ICONES[nom] || '';
+  return n;
+}
+
 function el(tag, attrs, enfants) {
   const n = document.createElement(tag);
   if (attrs) {
@@ -2593,7 +2703,7 @@ function attacherAutocompletion(input, cfg) {
       !courants.some(function (it) { return normal(it.libelle) === normal(txt); }));
     if (peutCreer) {
       const ligne = el('div', { class: 'ac-item creer', 'data-creer': '1' }, [
-        el('span', { text: (cfg.libelleCreation ? cfg.libelleCreation(txt.trim()) : '＋ Créer « ' + txt.trim() + ' »') }),
+        el('span', { text: (cfg.libelleCreation ? cfg.libelleCreation(txt.trim()) : '+ Créer « ' + txt.trim() + ' »') }),
       ]);
       ligne.addEventListener('mousedown', function (ev) { ev.preventDefault(); creer(); });
       liste.appendChild(ligne);
@@ -3049,8 +3159,10 @@ function vueSemaine() {
 
   if (estJeuExemple()) {
     v.appendChild(el('div', { class: 'bandeau-exemple' }, [
-      el('span', { text: 'Données d\'exemple chargées : 3 recettes et leurs ingrédients, pour essayer tout de suite.' }),
-      el('button', { type: 'button', class: 'btn mini', text: 'Effacer les données d\'exemple', onclick: effacerDonneesExemple }),
+      el('span', { text: '3 recettes d\'exemple' }),
+      el('button', { type: 'button', class: 'btn', text: '✕',
+        'aria-label': 'Effacer les données d\'exemple', title: 'Effacer les données d\'exemple',
+        onclick: effacerDonneesExemple }),
     ]));
   }
 
@@ -3068,12 +3180,13 @@ function vueSemaine() {
   // Recherche : nom, tag ou ingrédient.
   const champRecherche = el('input', { type: 'search', placeholder: 'Nom, tag ou ingrédient…', value: etat.rechercheRecettes, enterkeyhint: 'search', 'aria-label': 'Rechercher une recette par nom, tag ou ingrédient' });
   champRecherche.addEventListener('input', function () { etat.rechercheRecettes = champRecherche.value; remplirCartes(); });
-  const selectTag = el('select', { 'aria-label': 'Filtrer par tag', style: 'flex:0 1 150px' });
+  champRecherche.style.flex = '1 1 100%';
+  const selectTag = el('select', { 'aria-label': 'Filtrer par tag', style: 'flex:1 1 140px' });
   selectTag.appendChild(el('option', { value: '', text: 'Tous les tags' }));
   tousLesTags().forEach(function (t) { selectTag.appendChild(el('option', { value: t, text: t, selected: etat.tagFiltre === t })); });
   selectTag.addEventListener('change', function () { etat.tagFiltre = selectTag.value; remplirCartes(); });
 
-  const selectTri = el('select', { 'aria-label': 'Trier les recettes', style: 'flex:0 1 170px' });
+  const selectTri = el('select', { 'aria-label': 'Trier les recettes', style: 'flex:1 1 150px' });
   [['nom', 'Ordre alphabétique'], ['prix', 'Prix / portion ↑'], ['prix-desc', 'Prix / portion ↓']]
     .forEach(function (t) { selectTri.appendChild(el('option', { value: t[0], text: t[1], selected: etat.triRecettes === t[0] })); });
   selectTri.addEventListener('change', function () { etat.triRecettes = selectTri.value; remplirCartes(); });
@@ -3081,7 +3194,9 @@ function vueSemaine() {
   v.appendChild(el('div', { class: 'recherche' }, [champRecherche, selectTag, selectTri]));
 
   // Filtres : les questions qu'on se pose vraiment au moment de composer.
-  const zoneFiltres = el('div', { class: 'filtres' });
+  // Une rangée qui défile plutôt que deux qui s'empilent : chaque rangée en
+  // haut de l'écran, c'est une recette de moins qu'on voit.
+  const zoneFiltres = el('div', { class: 'filtres defilante' });
   v.appendChild(zoneFiltres);
 
   const grille = el('div', { class: 'grille-recettes' });
@@ -3269,9 +3384,10 @@ function vueSemaine() {
     // On compte des repas, pas des recettes : la même peut revenir deux fois
     // dans la période.
     const distinctes = new Set(sel.map(function (e) { return e.recetteId; })).size;
+    // Court, sinon la ligne se tronque et c'est le prix qui saute. Le détail
+    // des portions se déplie juste dessous.
     const resume = el('span', { class: 'resume' }, [
-      el('span', { text: sel.length + ' repas' + (distinctes !== sel.length ? ' (' + distinctes + ' recettes)' : '') +
-        ' · ' + totalPortions + ' portions' }),
+      el('span', { text: sel.length + ' repas' }),
     ]);
     if (afficherPrix()) {
       resume.appendChild(el('span', { text: ' · ' }));
@@ -3279,6 +3395,8 @@ function vueSemaine() {
     }
 
     const detail = el('div', { class: 'detail', id: 'detail-semaine', hidden: !etat.recapOuvert });
+    detail.appendChild(el('p', { class: 'tpt doux', style: 'margin:0',
+      text: totalPortions + ' portions' + (distinctes !== sel.length ? ' · ' + distinctes + ' recettes distinctes' : '') }));
     const ul = el('ul');
     sel.slice().sort(function (a, b) { return String(a.date || '9').localeCompare(String(b.date || '9')); })
       .forEach(function (s) {
@@ -3646,15 +3764,12 @@ function vueListe() {
   const t = modele.totaux;
 
   // En-tête collant
+  // La période est déjà dans la barre de titre, et cliquable : la répéter ici
+  // faisait passer l'en-tête sur deux lignes pour rien.
   const entete = el('div', { class: 'entete-liste' });
-  entete.appendChild(el('span', { text: t.nbCoches + ' / ' + t.nbArticles + ' article' + (t.nbArticles > 1 ? 's' : '') }));
-  entete.appendChild(el('button', {
-    type: 'button', class: 'puce puce-bouton', text: '🗓 ' + libelleDePeriode(D.semaine.periode),
-    title: 'Changer la période couverte par la liste',
-    onclick: function () { ouvrirCalendrier(); },
-  }));
+  entete.appendChild(el('span', { class: 'compte',
+    text: t.nbCoches + ' / ' + t.nbArticles + ' article' + (t.nbArticles > 1 ? 's' : '') }));
   if (afficherPrix()) {
-    entete.appendChild(el('span', { class: 'doux', text: '·' }));
     entete.appendChild(el('span', { class: 'reste', text: texteTotal(t.totalRestant, t.sansPrixRestant) + ' restants' }));
   }
   v.appendChild(entete);
@@ -3746,7 +3861,7 @@ function vueListe() {
   // Actions
   const actions = el('div', { class: 'barre-actions' });
   if (navigator.share) {
-    actions.appendChild(el('button', { type: 'button', class: 'btn principal', text: '↗ Partager la liste', onclick: partagerListe }));
+    actions.appendChild(el('button', { type: 'button', class: 'btn principal', text: 'Partager la liste', onclick: partagerListe }));
   }
   actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Copier la liste', onclick: copierListe }));
   actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Imprimer', onclick: function () { window.print(); } }));
@@ -3807,7 +3922,7 @@ function ligneArticle(a) {
     if (a.type === 'manuel') {
       detail.appendChild(el('div', { text: 'Article ajouté à la main — rayon : ' + RAYON_LIBELLE[a.rayon] + '.' }));
       detail.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.4rem' }, [
-        el('button', { type: 'button', class: 'btn mini', text: '✎ Modifier', onclick: function () { modifierArticleManuel(a.manuel); } }),
+        el('button', { type: 'button', class: 'btn mini', text: 'Modifier', onclick: function () { modifierArticleManuel(a.manuel); } }),
         el('button', { type: 'button', class: 'btn mini danger', text: 'Supprimer', onclick: function () { supprimerArticleManuel(a.cle); } }),
       ]));
     } else {
@@ -4237,7 +4352,7 @@ function vueRecettes() {
   champRecherche.addEventListener('input', remplir);
   v.appendChild(el('div', { class: 'recherche' }, [
     champRecherche,
-    el('button', { type: 'button', class: 'btn principal', text: '＋ Nouvelle recette', onclick: function () { ouvrirEditeurRecette(null); } }),
+    el('button', { type: 'button', class: 'btn principal', text: '+ Nouvelle recette', onclick: function () { ouvrirEditeurRecette(null); } }),
   ]));
   v.appendChild(grille);
 
@@ -4254,28 +4369,52 @@ function vueRecettes() {
       return;
     }
     recettes.forEach(function (r) {
+      // Six puces sur deux rangées se lisent moins bien qu'une ligne de texte :
+      // ce sont des faits, pas des signaux.
       const c = coutRecette(D, r, r.portionsDefaut);
-      const meta = el('div', { class: 'meta' });
-      if (r.tempsPreparationMin) meta.appendChild(el('span', { class: 'puce', text: r.tempsPreparationMin + ' min' }));
-      if (r.temperature) meta.appendChild(el('span', { class: 'puce', text: TEMPERATURE_LIBELLE[r.temperature] }));
-      meta.appendChild(el('span', { class: 'puce', text: r.lignes.length + ' ingrédient' + (r.lignes.length > 1 ? 's' : '') }));
-      r.tags.forEach(function (t) { meta.appendChild(el('span', { class: 'puce', text: t })); });
+      const faits = [];
+      if (r.tempsPreparationMin) faits.push(r.tempsPreparationMin + ' min');
+      if (r.temperature) faits.push(TEMPERATURE_LIBELLE[r.temperature]);
+      faits.push(r.lignes.length + ' ingrédient' + (r.lignes.length > 1 ? 's' : ''));
+      if (r.tags.length) faits.push(r.tags.join(', '));
       if (afficherPrix()) {
-        meta.appendChild(el('span', { class: 'puce accent', text: (c.total > 0 ? formatEuroFixe(c.parPortion) : '—') + ' / portion' + (c.sansPrix ? ' ≥' : '') }));
+        faits.push((c.total > 0 ? formatEuroFixe(c.parPortion) : '—') + ' / portion' + (c.sansPrix ? ' ≥' : ''));
       }
-      const carte = el('div', { class: 'carte carte-recette' }, [
+      const meta = el('div', { class: 'meta' }, [el('span', { text: faits.join(' · ') })]);
+      // Quatre boutons pleine largeur par recette faisaient des cartes de 480 px
+      // où « Supprimer », en rouge, était l'élément le plus visible de l'écran.
+      // La carte redevient une ligne : on la touche pour modifier, le reste
+      // passe par un menu.
+      const ouvrir = el('button', { type: 'button', class: 'ligne-recette' }, [
         el('div', { class: 'infos' }, [el('div', { class: 'nom', text: r.nom }), meta]),
-        el('div', { style: 'display:flex;flex-direction:column;gap:.25rem' }, [
-          el('button', { type: 'button', class: 'btn mini', text: 'Modifier', onclick: function () { ouvrirEditeurRecette(r); } }),
-          el('button', { type: 'button', class: 'btn mini', text: 'Dupliquer', onclick: function () { dupliquerRecette(r); } }),
-          el('button', { type: 'button', class: 'btn mini', text: '↗ Partager', onclick: function () { partagerRecette(r); } }),
-          el('button', { type: 'button', class: 'btn mini danger', text: 'Supprimer', onclick: function () { supprimerRecette(r); } }),
-        ]),
       ]);
-      grille.appendChild(carte);
+      ouvrir.setAttribute('aria-label', 'Modifier ' + r.nom);
+      ouvrir.addEventListener('click', function () { ouvrirEditeurRecette(r); });
+      const menu = el('button', { type: 'button', class: 'btn fantome menu-recette',
+        'aria-label': 'Actions pour ' + r.nom }, [icone('points')]);
+      menu.addEventListener('click', function () { menuRecette(r); });
+      grille.appendChild(el('div', { class: 'carte carte-recette' }, [ouvrir, menu]));
     });
   }
   remplir();
+}
+
+/** Actions secondaires d'une recette. « Modifier » est la carte elle-même. */
+function menuRecette(recette) {
+  ouvrirModale({
+    titre: recette.nom,
+    corps: [el('div', { class: 'menu-actions' }, [
+      el('button', { type: 'button', class: 'btn', onclick: function () { fermerModale(); ouvrirEditeurRecette(recette); } },
+        [icone('crayon'), el('span', { text: 'Modifier' })]),
+      el('button', { type: 'button', class: 'btn', onclick: function () { fermerModale(); partagerRecette(recette); } },
+        [icone('partage'), el('span', { text: 'Partager' })]),
+      el('button', { type: 'button', class: 'btn', onclick: function () { fermerModale(); dupliquerRecette(recette); } },
+        [icone('coller'), el('span', { text: 'Dupliquer' })]),
+      el('button', { type: 'button', class: 'btn danger', onclick: function () { fermerModale(); supprimerRecette(recette); } },
+        [icone('balai'), el('span', { text: 'Supprimer' })]),
+    ])],
+    actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
+  });
 }
 
 function ouvrirEditeurRecette(recette) {
@@ -4402,8 +4541,8 @@ function construireEditeurRecette() {
     ]),
     conteneurLignes,
     el('div', { class: 'barre-actions', style: 'margin-top:.5rem' }, [
-      el('button', { type: 'button', class: 'btn', text: '＋ Ajouter une ligne', onclick: function () { r.lignes.push(ligneVide()); rendreLignes({ index: r.lignes.length - 1, champ: 'ing' }); } }),
-      el('button', { type: 'button', class: 'btn', text: '⎘ Coller une liste', onclick: collerIngredients }),
+      el('button', { type: 'button', class: 'btn', text: '+ Ajouter une ligne', onclick: function () { r.lignes.push(ligneVide()); rendreLignes({ index: r.lignes.length - 1, champ: 'ing' }); } }),
+      el('button', { type: 'button', class: 'btn', text: 'Coller une liste', onclick: collerIngredients }),
     ]),
   ]));
 
@@ -4474,7 +4613,7 @@ function construireChampTags(r) {
     },
     surChoix: function (it) { ajouterTag(it.libelle); },
     surCreation: function (txt) { ajouterTag(txt); },
-    libelleCreation: function (txt) { return '＋ Ajouter le tag « ' + txt + ' »'; },
+    libelleCreation: function (txt) { return '+ Ajouter le tag « ' + txt + ' »'; },
     surEntreeVide: function (txt) { ajouterTag(txt); },
   });
   redessiner();
@@ -4506,7 +4645,7 @@ function rendreLignes(focusCible) {
       surCreation: function (txt) {
         creerIngredient(txt, function (nouvel) { affecterIngredient(index, nouvel.id); });
       },
-      libelleCreation: function (txt) { return '＋ Créer l\'ingrédient « ' + txt + ' »'; },
+      libelleCreation: function (txt) { return '+ Créer l\'ingrédient « ' + txt + ' »'; },
     });
     champIng.addEventListener('blur', function () {
       // Un texte libre qui ne correspond à rien ne crée jamais d'ingrédient silencieusement.
@@ -4960,13 +5099,13 @@ async function supprimerRecette(recette, depuisEditeur) {
    ------------------------------------------------------------------------- */
 
 const SOUS_VUES_PLUS = [
-  { cle: 'reglages', icone: '⚙️', titre: 'Réglages & référentiel',
+  { cle: 'reglages', icone: 'reglages', titre: 'Réglages & référentiel',
     resume: function () { return D.ingredients.length + ' ingrédients'; } },
-  { cle: 'sync', icone: '🔗', titre: 'Partage & synchronisation',
+  { cle: 'sync', icone: 'lien', titre: 'Partage & synchronisation',
     resume: function () { return infosEspaces.courant ? infosEspaces.courant.nom : 'Cet appareil seulement'; } },
-  { cle: 'historique', icone: '🗄️', titre: 'Historique des semaines',
+  { cle: 'historique', icone: 'archive', titre: 'Historique des semaines',
     resume: function () { return D.historique.length ? D.historique.length + ' semaine' + (D.historique.length > 1 ? 's' : '') + ' archivée' + (D.historique.length > 1 ? 's' : '') : 'Rien d\'archivé'; } },
-  { cle: 'donnees', icone: '💾', titre: 'Sauvegarde & données',
+  { cle: 'donnees', icone: 'disque', titre: 'Sauvegarde & données',
     resume: function () { return D.recettes.length + ' recettes · ' + D.ingredients.length + ' ingrédients'; } },
 ];
 
@@ -4987,7 +5126,7 @@ function vuePlus() {
     const grille = el('div', { class: 'grille-hub' });
     SOUS_VUES_PLUS.forEach(function (s) {
       const b = el('button', { type: 'button', class: 'tuile-hub' }, [
-        el('span', { class: 'ic', 'aria-hidden': 'true', text: s.icone }),
+        icone(s.icone, 'ic-tuile'),
         el('span', { class: 'txt' }, [
           el('span', { class: 'titre', text: s.titre }),
           el('span', { class: 'resume', text: s.resume() }),
@@ -5036,13 +5175,13 @@ function sectionReferentiel(v) {
   champRech.addEventListener('input', function () { etat.rechercheIngredients = champRech.value; remplirTable(); });
   const barreRef = el('div', { class: 'recherche' }, [
     champRech,
-    el('button', { type: 'button', class: 'btn', text: '＋ Nouvel ingrédient', onclick: function () { formulaireIngredient('', null); } }),
+    el('button', { type: 'button', class: 'btn', text: '+ Nouvel ingrédient', onclick: function () { formulaireIngredient('', null); } }),
   ]);
   const inutilises = ingredientsInutilises(D);
   if (inutilises.length) {
     barreRef.appendChild(el('button', {
       type: 'button', class: 'btn',
-      text: '🧹 Supprimer les ' + inutilises.length + ' inutilisés',
+      text: 'Supprimer les ' + inutilises.length + ' inutilisés',
       title: 'Ingrédients qu\'aucune recette n\'utilise',
       onclick: purgerIngredientsInutilises,
     }));
@@ -5193,8 +5332,8 @@ function sectionSauvegarde() {
   return el('div', { class: 'carte' }, [
     el('h2', { text: 'Sauvegarde de vos données' }),
     el('div', { class: 'barre-actions' }, [
-      el('button', { type: 'button', class: 'btn principal', text: '⭳ Exporter les données', onclick: exporterDonnees }),
-      el('button', { type: 'button', class: 'btn', text: '⭱ Importer un fichier', onclick: importerDonnees }),
+      el('button', { type: 'button', class: 'btn principal', text: 'Exporter les données', onclick: exporterDonnees }),
+      el('button', { type: 'button', class: 'btn', text: 'Importer un fichier', onclick: importerDonnees }),
     ]),
   ]);
 }
@@ -5947,7 +6086,7 @@ function carteSynchronisation() {
       el('p', { class: 'pt', style: 'margin:0 0 .4rem', text:
         'Le serveur ne connaît plus cet espace. Vos données sont intactes sur cet appareil ; ' +
         'le reconstruire remet en service le lien déjà partagé.' }),
-      el('button', { type: 'button', class: 'btn principal', text: '⟳ Reconstruire l\'espace',
+      el('button', { type: 'button', class: 'btn principal', text: 'Reconstruire l\'espace',
         onclick: reconstruireEspace }),
     ]));
   }
@@ -5980,14 +6119,14 @@ function carteSynchronisation() {
 
   const actions = el('div', { class: 'barre-actions' });
   actions.appendChild(el('button', {
-    type: 'button', class: 'btn principal', text: '＋ Créer un espace partagé',
+    type: 'button', class: 'btn principal', text: '+ Créer un espace partagé',
     onclick: creerEspacePartage,
   }));
   actions.appendChild(el('button', {
     type: 'button', class: 'btn', text: '⇥ Rejoindre avec un lien', onclick: rejoindreParLien,
   }));
   if (courant) {
-    actions.appendChild(el('button', { type: 'button', class: 'btn', text: '🔗 Lien de partage', onclick: montrerLienPartage }));
+    actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Lien de partage', onclick: montrerLienPartage }));
     actions.appendChild(el('button', { type: 'button', class: 'btn', text: '↻ Synchroniser', onclick: async function () {
       await Store.synchroniser(); await rafraichirEtatEspaces(); rendre(); toast('Synchronisation demandée.');
     } }));
