@@ -1815,7 +1815,7 @@ function planEnIcs(donnees, options) {
     'PRODID:-//Liste de courses//Plan de repas//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
     'X-WR-CALNAME:Repas'];
   const exportes = {};
-  let nb = 0, annules = 0;
+  let nb = 0;
 
   selectionActive(donnees).filter(function (e) { return e.date; }).forEach(function (e) {
     const r = parRec.get(e.recetteId);
@@ -1857,21 +1857,15 @@ function planEnIcs(donnees, options) {
     lignes.push('END:VEVENT');
   });
 
-  Object.keys(dejaExportes).forEach(function (id) {
-    if (exportes[id]) return;
-    annules += 1;
-    lignes.push('BEGIN:VEVENT');
-    lignes.push(plierIcs('UID:' + id + UID_CALENDRIER));
-    lignes.push('DTSTAMP:' + estampille);
-    lignes.push('DTSTART:' + estampille);
-    lignes.push('SEQUENCE:' + ((dejaExportes[id] || 0) + 1));
-    lignes.push('STATUS:CANCELLED');
-    lignes.push('SUMMARY:Repas annulé');
-    lignes.push('END:VEVENT');
-  });
+  // Les repas retirés depuis le dernier envoi sont comptés, pas émis : un
+  // VEVENT « STATUS:CANCELLED » est ignoré à l'import — le calendrier ne
+  // supprime rien — et certains clients en font une entrée parasite. On les
+  // signale à l'écran pour que le ménage se fasse à la main, en connaissance
+  // de cause.
+  const retires = Object.keys(dejaExportes).filter(function (id) { return !exportes[id]; });
 
   lignes.push('END:VCALENDAR');
-  return { texte: lignes.join('\r\n') + '\r\n', nb: nb, annules: annules, exportes: exportes };
+  return { texte: lignes.join('\r\n') + '\r\n', nb: nb, retires: retires.length, exportes: exportes };
 }
 
 /* --- Lecture d'une liste d'ingrédients collée -----------------------------
@@ -2764,7 +2758,9 @@ function ouvrirModale(cfg) {
   const focusPrecedent = document.activeElement;
   const boite = el('div', { class: 'modal', role: 'dialog', 'aria-modal': 'true', 'aria-label': cfg.titre || 'Fenêtre' });
   if (cfg.titre) boite.appendChild(el('h2', { text: cfg.titre }));
-  (cfg.corps || []).forEach(function (c) { boite.appendChild(c); });
+  // On filtre comme le fait el() et comme le font déjà les actions : un corps
+  // se construit souvent avec des « condition ? noeud : null ».
+  (cfg.corps || []).filter(Boolean).forEach(function (c) { boite.appendChild(c); });
   const actions = el('div', { class: 'actions' });
   (cfg.actions || []).filter(Boolean).forEach(function (a) {
     actions.appendChild(el('button', {
@@ -4340,7 +4336,7 @@ function listeEnTexte() {
  */
 async function ajouterAuCalendrier() {
   const plan = planEnIcs(D, {});
-  if (!plan.nb && !plan.annules) {
+  if (!plan.nb && !plan.retires) {
     toast('Aucun repas daté dans la période — donnez-leur un jour d\'abord.');
     return;
   }
@@ -4348,8 +4344,7 @@ async function ajouterAuCalendrier() {
   const url = URL.createObjectURL(new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' }));
 
   const resume = plan.nb + ' repas' +
-    (D.reglages.rappelMinutes ? ' · rappel ' + libelleRappel(D.reglages.rappelMinutes) : '') +
-    (plan.annules ? ' · ' + plan.annules + ' annulé' + (plan.annules > 1 ? 's' : '') : '');
+    (D.reglages.rappelMinutes ? ' · rappel ' + libelleRappel(D.reglages.rappelMinutes) : '');
 
   const lien = el('a', {
     href: url, download: nomFichier, class: 'btn principal', style: 'text-decoration:none',
@@ -4368,6 +4363,11 @@ async function ajouterAuCalendrier() {
       el('p', { class: 'pt doux', style: 'margin:0 0 .2rem', text: resume }),
       el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
         text: 'Touchez ensuite le fichier téléchargé : votre calendrier proposera de tout ajouter.' }),
+      // Un fichier importé ne peut qu'ajouter et remplacer. Supprimer, non :
+      // aucun calendrier n'obéit à une annulation venue d'un simple import.
+      plan.retires ? el('p', { class: 'tpt', style: 'margin:0 0 .6rem;color:var(--danger)',
+        text: plan.retires + ' repas retiré' + (plan.retires > 1 ? 's' : '') + ' de la semaine depuis le dernier envoi — ' +
+          'à supprimer à la main dans votre calendrier, un import ne sait pas le faire.' }) : null,
       el('div', { class: 'menu-actions' }, [lien]),
     ],
     actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
