@@ -884,6 +884,12 @@ function donneesVides() {
       theme: 'auto',
       portionsBase: 4,
       serveurSync: '',
+      heureRepas: '19:30',
+      rappelMinutes: 60,
+      // Ce qui est déjà parti au calendrier, et sous quelle révision : sans
+      // cette mémoire, réexporter dupliquerait tout et un repas retiré de
+      // l'application resterait indéfiniment dans le calendrier.
+      calendrierExporte: {},
     },
   };
 }
@@ -1075,6 +1081,16 @@ function normaliserRacine(d) {
     theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
     portionsBase: (typeof g.portionsBase === 'number' && g.portionsBase > 0) ? Math.min(99, Math.round(g.portionsBase)) : 4,
     serveurSync: (typeof g.serveurSync === 'string') ? g.serveurSync.replace(/\/+$/, '') : '',
+    heureRepas: /^([01]\d|2[0-3]):[0-5]\d$/.test(g.heureRepas) ? g.heureRepas : '19:30',
+    rappelMinutes: (typeof g.rappelMinutes === 'number' && g.rappelMinutes >= 0)
+      ? Math.min(1440, Math.round(g.rappelMinutes)) : 60,
+    calendrierExporte: (g.calendrierExporte && typeof g.calendrierExporte === 'object' && !Array.isArray(g.calendrierExporte))
+      ? Object.keys(g.calendrierExporte).reduce(function (acc, k) {
+          const n = g.calendrierExporte[k];
+          if (typeof n === 'number' && isFinite(n) && n >= 0) acc[k] = Math.round(n);
+          return acc;
+        }, {})
+      : {},
   };
   return out;
 }
@@ -1723,6 +1739,141 @@ function ressemblance(a, b) {
   return score;
 }
 /** Ingrédients du référentiel ressemblant au nom saisi, du plus proche au moins proche. */
+/* --- Export vers le calendrier du téléphone -------------------------------
+   Une application web ne peut pas se réveiller pour prévenir à 18 h 30 : il
+   n'existe aucune API pour programmer une notification à J+3. Le calendrier du
+   téléphone, lui, sait le faire — écran verrouillé, hors ligne, sur la montre.
+   On lui donne donc les repas au format iCalendar, avec leur alarme, et c'est
+   lui qui sonne.
+   ------------------------------------------------------------------------- */
+
+/** Échappement iCalendar (RFC 5545 §3.3.11). L'ordre compte : la barre d'abord. */
+function echapperIcs(texte) {
+  return String(texte === null || texte === undefined ? '' : texte)
+    .replace(/\\/g, '\\\\')
+    .replace(/;/g, '\\;')
+    .replace(/,/g, '\\,')
+    .replace(/\r?\n/g, '\\n');
+}
+
+/**
+ * Une ligne iCalendar ne dépasse pas 75 octets : au-delà on replie, la suite
+ * commençant par une espace. C'est compté en octets et non en caractères — un
+ * « é » en occupe deux — et couper au milieu d'un caractère produirait un
+ * fichier illisible.
+ */
+function plierIcs(ligne) {
+  const octets = new TextEncoder().encode(ligne);
+  if (octets.length <= 75) return ligne;
+  const dec = new TextDecoder();
+  const morceaux = [];
+  let debut = 0;
+  while (debut < octets.length) {
+    let fin = Math.min(debut + (morceaux.length ? 74 : 75), octets.length);
+    while (fin > debut + 1 && fin < octets.length && (octets[fin] & 0xc0) === 0x80) fin--;
+    morceaux.push((morceaux.length ? ' ' : '') + dec.decode(octets.slice(debut, fin)));
+    debut = fin;
+  }
+  return morceaux.join('\r\n');
+}
+
+function horodatageIcs(iso, heure) {
+  return String(iso).replace(/-/g, '') + 'T' + String(heure).replace(':', '') + '00';
+}
+/** Instant UTC au format iCalendar, pour DTSTAMP. */
+function maintenantIcs(date) {
+  const d = date || new Date();
+  const p = function (n) { return String(n).padStart(2, '0'); };
+  return d.getUTCFullYear() + p(d.getUTCMonth() + 1) + p(d.getUTCDate()) + 'T' +
+    p(d.getUTCHours()) + p(d.getUTCMinutes()) + p(d.getUTCSeconds()) + 'Z';
+}
+/** Heure « hh:mm » valide, sinon la valeur de repli. */
+function heureValide(h, repli) {
+  return /^([01]\d|2[0-3]):[0-5]\d$/.test(String(h)) ? String(h) : repli;
+}
+
+const UID_CALENDRIER = '@liste-courses';
+
+/**
+ * Le plan de la période, au format iCalendar.
+ * Chaque repas garde l'identifiant de son entrée de planning : réexporter met
+ * l'événement à jour au lieu d'en créer un second. Les repas retirés depuis le
+ * dernier export sortent marqués annulés — et seulement ceux-là, pour ne pas
+ * créer chez le destinataire des événements qu'il n'a jamais eus.
+ */
+function planEnIcs(donnees, options) {
+  const o = options || {};
+  const heure = heureValide(o.heure || donnees.reglages.heureRepas, '19:30');
+  const rappel = (typeof o.rappel === 'number' ? o.rappel : donnees.reglages.rappelMinutes) | 0;
+  const dejaExportes = o.exportes || donnees.reglages.calendrierExporte || {};
+  const parRec = indexRecettes(donnees);
+  const parIng = indexIngredients(donnees);
+  const estampille = maintenantIcs(o.maintenant);
+  const [hh, mm] = heure.split(':').map(Number);
+
+  const lignes = ['BEGIN:VCALENDAR', 'VERSION:2.0',
+    'PRODID:-//Liste de courses//Plan de repas//FR', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'X-WR-CALNAME:Repas'];
+  const exportes = {};
+  let nb = 0, annules = 0;
+
+  selectionActive(donnees).filter(function (e) { return e.date; }).forEach(function (e) {
+    const r = parRec.get(e.recetteId);
+    const debut = dateDepuisISO(e.date);
+    if (!r || !debut) return;
+    nb += 1;
+    const sequence = (dejaExportes[e.id] || 0) + 1;
+    exportes[e.id] = sequence;
+    const fin = new Date(debut.getTime());
+    fin.setHours(hh, mm + Math.max(15, r.tempsPreparationMin || 60), 0, 0);
+    // Heure flottante : 19 h 30 là où l'on se trouve, sans fuseau à embarquer.
+    const ingredients = r.lignes.map(function (l) {
+      const i = parIng.get(l.ingredientId);
+      if (!i || typeof l.quantite !== 'number') return null;
+      return formatQuantiteBase(versBase(l.quantite * e.portions, l.unite, i.famille), i) +
+        ' ' + minusculeInitiale(i.nom);
+    }).filter(Boolean);
+    // Sans ingrédient, la description commencerait par deux lignes vides.
+    const parties = [];
+    if (ingredients.length) parties.push(ingredients.join('\n'));
+    if (r.notes && r.notes.trim()) parties.push(r.notes.trim());
+    const description = parties.join('\n\n');
+
+    lignes.push('BEGIN:VEVENT');
+    lignes.push(plierIcs('UID:' + e.id + UID_CALENDRIER));
+    lignes.push('DTSTAMP:' + estampille);
+    lignes.push('DTSTART:' + horodatageIcs(e.date, heure));
+    lignes.push('DTEND:' + horodatageIcs(isoDuJour(fin),
+      String(fin.getHours()).padStart(2, '0') + ':' + String(fin.getMinutes()).padStart(2, '0')));
+    lignes.push('SEQUENCE:' + sequence);
+    lignes.push('STATUS:CONFIRMED');
+    lignes.push(plierIcs('SUMMARY:' + echapperIcs(r.nom + ' — ' + e.portions + ' portions')));
+    if (description) lignes.push(plierIcs('DESCRIPTION:' + echapperIcs(description)));
+    if (rappel > 0) {
+      lignes.push('BEGIN:VALARM', 'ACTION:DISPLAY',
+        plierIcs('DESCRIPTION:' + echapperIcs('Bientôt : ' + r.nom)),
+        'TRIGGER:-PT' + rappel + 'M', 'END:VALARM');
+    }
+    lignes.push('END:VEVENT');
+  });
+
+  Object.keys(dejaExportes).forEach(function (id) {
+    if (exportes[id]) return;
+    annules += 1;
+    lignes.push('BEGIN:VEVENT');
+    lignes.push(plierIcs('UID:' + id + UID_CALENDRIER));
+    lignes.push('DTSTAMP:' + estampille);
+    lignes.push('DTSTART:' + estampille);
+    lignes.push('SEQUENCE:' + ((dejaExportes[id] || 0) + 1));
+    lignes.push('STATUS:CANCELLED');
+    lignes.push('SUMMARY:Repas annulé');
+    lignes.push('END:VEVENT');
+  });
+
+  lignes.push('END:VCALENDAR');
+  return { texte: lignes.join('\r\n') + '\r\n', nb: nb, annules: annules, exportes: exportes };
+}
+
 /* --- Lecture d'une liste d'ingrédients collée -----------------------------
    Une recette se copie plus vite qu'elle ne se retape. On lit « 200 g de riz »,
    « 1 c. à soupe d'huile », « 3 gousses d'ail », et on rend ce que
@@ -2348,6 +2499,7 @@ const COLLECTIONS_CLEF = {
 const VALEURS_OPAQUES = [
   'historique',
   'reglages.ordreRayons',
+  'reglages.calendrierExporte',
   'recettes.*.tags',
   'recettes.*.lignes',
   'recettes.*.saisons',
@@ -3275,6 +3427,8 @@ function vueSemaine() {
   v.appendChild(recap);
 
   v.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.6rem' }, [
+    el('button', { type: 'button', class: 'btn', onclick: ajouterAuCalendrier },
+      [icone('calendrier'), el('span', { text: 'Ajouter au calendrier' })]),
     el('button', { type: 'button', class: 'btn', text: 'Vider la semaine', onclick: viderSemaine }),
     el('button', { type: 'button', class: 'btn', text: 'Enregistrer comme semaine type', onclick: enregistrerSemaineType }),
     el('button', { type: 'button', class: 'btn', text: 'Semaines types', onclick: chargerSemaineType }),
@@ -4172,6 +4326,66 @@ function listeEnTexte() {
     lignes.push('Total estimé : ' + texteTotal(modele.totaux.totalTous, modele.totaux.sansPrixTous));
   }
   return lignes.join('\n');
+}
+
+/**
+ * Remet le plan au calendrier du téléphone. Trois chemins, du meilleur au
+ * dernier recours : le menu de partage (c'est lui qui propose « Calendrier »),
+ * un téléchargement que le système ouvre, puis un lien à ouvrir à la main.
+ */
+async function ajouterAuCalendrier() {
+  const plan = planEnIcs(D, {});
+  if (!plan.nb && !plan.annules) {
+    toast('Aucun repas daté dans la période — donnez-leur un jour d\'abord.');
+    return;
+  }
+  const nomFichier = 'repas-' + D.semaine.periode.debut + '.ics';
+  const contenu = new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' });
+  let livre = false;
+
+  try {
+    if (navigator.share && navigator.canShare) {
+      const f = new File([contenu], nomFichier, { type: 'text/calendar' });
+      if (navigator.canShare({ files: [f] })) {
+        await navigator.share({ files: [f], title: 'Repas de la semaine' });
+        livre = true;
+      }
+    }
+  } catch (e) {
+    // Menu refermé sans choisir : rien n'est parti, donc rien à mémoriser.
+    if (e && e.name === 'AbortError') return;
+  }
+
+  if (!livre) {
+    try {
+      const url = URL.createObjectURL(contenu);
+      const a = el('a', { href: url, download: nomFichier });
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(function () { URL.revokeObjectURL(url); }, 30000);
+      livre = true;
+    } catch (e) { livre = false; }
+  }
+
+  if (!livre) {
+    const url = URL.createObjectURL(contenu);
+    ouvrirModale({
+      titre: 'Ajouter au calendrier',
+      corps: [el('p', { class: 'pt', text: 'Ouvrez ce fichier pour l\'ajouter à votre calendrier.' }),
+        el('a', { href: url, download: nomFichier, class: 'btn principal',
+          style: 'text-decoration:none', text: nomFichier })],
+      actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
+    });
+  }
+
+  // Mémorisé après coup : réexporter mettra les événements à jour au lieu de
+  // les dupliquer, et un repas retiré ressortira annulé.
+  D.reglages.calendrierExporte = plan.exportes;
+  await sauvegarder();
+  const dit = [plan.nb + ' repas'];
+  if (plan.annules) dit.push(plan.annules + ' annulé' + (plan.annules > 1 ? 's' : ''));
+  toast(dit.join(' · ') + ' — à ajouter dans votre calendrier.');
 }
 
 /* --- Partager une recette --------------------------------------------------
@@ -5249,6 +5463,7 @@ function vuePlus() {
 
   if (sous.cle === 'reglages') {
     v.appendChild(sectionAffichage());
+    v.appendChild(sectionCalendrier());
     sectionReferentiel(v);
     v.appendChild(sectionOrdreRayons());
   } else if (sous.cle === 'sync') {
@@ -5427,6 +5642,55 @@ function sectionAffichage() {
     el('label', { class: 'inline-case' }, [casePrix, el('span', { text: 'Afficher les prix' })]),
     el('label', { class: 'champ', style: 'margin-top:.5rem' }, [el('span', { text: 'Thème' }), selTheme]),
   ]);
+}
+
+/** Ce que le calendrier du téléphone doit savoir : quand, et combien avant. */
+function sectionCalendrier() {
+  const champHeure = el('input', { type: 'time', value: D.reglages.heureRepas, style: 'max-width:150px',
+    'aria-label': 'Heure des repas' });
+  champHeure.addEventListener('change', async function () {
+    D.reglages.heureRepas = heureValide(champHeure.value, D.reglages.heureRepas);
+    champHeure.value = D.reglages.heureRepas;
+    await sauvegarder();
+  });
+  const champRappel = el('select', { style: 'max-width:190px', 'aria-label': 'Rappel avant le repas' });
+  [[0, 'Aucun rappel'], [15, '15 minutes avant'], [30, '30 minutes avant'],
+   [60, '1 heure avant'], [120, '2 heures avant'], [180, '3 heures avant']].forEach(function (r) {
+    champRappel.appendChild(el('option', { value: r[0], text: r[1], selected: D.reglages.rappelMinutes === r[0] }));
+  });
+  champRappel.addEventListener('change', async function () {
+    D.reglages.rappelMinutes = Number(champRappel.value) || 0;
+    await sauvegarder();
+  });
+
+  const carte = el('div', { class: 'carte' }, [
+    el('h2', { text: 'Calendrier' }),
+    el('div', { class: 'ligne-champs' }, [
+      el('label', { class: 'champ' }, [el('span', { text: 'Heure des repas' }), champHeure]),
+      el('label', { class: 'champ' }, [el('span', { text: 'Rappel' }), champRappel]),
+    ]),
+  ]);
+  const nb = Object.keys(D.reglages.calendrierExporte || {}).length;
+  if (nb) {
+    carte.appendChild(el('div', { class: 'barre-actions' }, [
+      el('span', { class: 'tpt doux', style: 'flex:1 1 auto',
+        text: nb + ' repas suivi' + (nb > 1 ? 's' : '') + ' dans votre calendrier' }),
+      el('button', {
+        type: 'button', class: 'btn mini fantome', text: 'Oublier',
+        title: 'Repartir de zéro : le prochain envoi n\'annulera plus rien',
+        onclick: async function () {
+          const avant = D.reglages.calendrierExporte;
+          D.reglages.calendrierExporte = {};
+          await sauvegarder();
+          vuePlus();
+          supprimerAvecAnnulation('Suivi du calendrier', async function () {
+            D.reglages.calendrierExporte = avant; await sauvegarder(); vuePlus();
+          });
+        },
+      }),
+    ]));
+  }
+  return carte;
 }
 
 function sectionSauvegarde() {
