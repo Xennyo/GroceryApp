@@ -4673,6 +4673,19 @@ function listeEnTexte() {
  * pour « text/calendar » et n'affiche qu'une page blanche. Un téléchargement,
  * lui, arrive dans Fichiers, et l'ouvrir propose « Ajouter tous à Calendrier ».
  */
+/**
+ * Deux chemins mènent au calendrier du téléphone, et un seul sait supprimer.
+ *
+ *   — Un fichier téléchargé est IMPORTÉ. L'import sait ajouter et mettre à
+ *     jour — même UID, SEQUENCE supérieure — mais jamais retirer : aucun
+ *     calendrier n'obéit à une annulation venue d'un simple fichier. Un repas
+ *     enlevé de la semaine reste donc dans l'agenda, pour toujours.
+ *   — L'abonnement relit une adresse et REMPLACE son contenu. C'est le seul
+ *     mécanisme qui fasse suivre les suppressions.
+ *
+ * L'abonnement est donc proposé en premier dès qu'il est possible, et le
+ * fichier ne se présente plus sans dire ce qu'il ne sait pas faire.
+ */
 async function ajouterAuCalendrier() {
   const plan = planEnIcs(D, { heure: RA.heureRepas, rappel: RA.rappelMinutes });
   if (!plan.nb && !plan.retires) {
@@ -4681,34 +4694,71 @@ async function ajouterAuCalendrier() {
   }
   const nomFichier = 'repas-' + D.semaine.periode.debut + '.ics';
   const url = URL.createObjectURL(new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' }));
+  const adresse = D.reglages.abonnementCalendrier;
+  const peutSAbonner = !!(infosEspaces && infosEspaces.courant);
 
   const resume = plan.nb + ' repas' +
     (RA.rappelMinutes ? ' · rappel ' + libelleRappel(RA.rappelMinutes) : '');
 
-  const lien = el('a', {
-    href: url, download: nomFichier, class: 'btn principal', style: 'text-decoration:none',
-  }, [icone('calendrier'), el('span', { text: 'Ajouter au calendrier' })]);
+  const lienFichier = el('a', {
+    href: url, download: nomFichier,
+    class: adresse ? 'btn mini fantome' : 'btn', style: 'text-decoration:none',
+  }, [el('span', { text: adresse ? 'Télécharger le fichier quand même' : 'Télécharger le fichier' })]);
   // Mémorisé au moment où le fichier part : réexporter mettra les événements à
   // jour au lieu de les dupliquer. Fermer sans rien prendre ne mémorise rien.
-  lien.addEventListener('click', async function () {
+  lienFichier.addEventListener('click', async function () {
     fermerModale();
     D.reglages.calendrierExporte = plan.exportes;
     await sauvegarder();
   });
 
+  const corps = [el('p', { class: 'pt doux', style: 'margin:0 0 .6rem', text: resume })];
+
+  if (adresse) {
+    // Déjà abonné : le calendrier se tient à jour tout seul, et proposer un
+    // fichier en premier ne ferait que réintroduire des repas indéboulonnables.
+    corps.push(el('p', { class: 'tpt', style: 'margin:0 0 .6rem',
+      text: 'Ce calendrier est abonné : il se met à jour tout seul, suppressions comprises. ' +
+            'Il n\'y a rien à faire ici.' }));
+    corps.push(el('div', { class: 'menu-actions' }, [
+      el('a', { href: adresse.replace(/^https?:/, 'webcal:'), class: 'btn principal',
+        style: 'text-decoration:none' },
+        [icone('calendrier'), el('span', { text: 'Abonner un autre appareil' })]),
+      lienFichier,
+    ]));
+  } else {
+    corps.push(el('p', { class: 'tpt', style: 'margin:0 0 .6rem;color:var(--danger)',
+      text: 'Un fichier téléchargé sait ajouter et mettre à jour, jamais supprimer. ' +
+            'Un repas retiré de la semaine restera dans votre calendrier.' }));
+    const actions = [];
+    if (peutSAbonner) {
+      corps.push(el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
+        text: 'L\'abonnement, lui, relit l\'adresse et remplace son contenu : c\'est le seul ' +
+              'qui fasse suivre les suppressions.' }));
+      actions.push(el('button', {
+        type: 'button', class: 'btn principal', onclick: async function () {
+          fermerModale();
+          await creerAbonnementCalendrier();
+        },
+      }, [icone('calendrier'), el('span', { text: 'Créer un abonnement' })]));
+    } else {
+      corps.push(el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
+        text: 'L\'abonnement demande un espace partagé — voir Plus → Synchronisation.' }));
+    }
+    actions.push(lienFichier);
+    corps.push(el('div', { class: 'menu-actions' }, actions));
+  }
+
+  if (plan.retires) {
+    corps.push(el('p', { class: 'tpt', style: 'margin:.5rem 0 0;color:var(--danger)',
+      text: plan.retires + ' repas retiré' + (plan.retires > 1 ? 's' : '') +
+        ' depuis le dernier fichier envoyé. Ceux-là sont déjà dans votre calendrier et ' +
+        'n\'en partiront pas seuls : supprimez-les à la main.' }));
+  }
+
   ouvrirModale({
     titre: 'Ajouter au calendrier',
-    corps: [
-      el('p', { class: 'pt doux', style: 'margin:0 0 .2rem', text: resume }),
-      el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
-        text: 'Touchez ensuite le fichier téléchargé : votre calendrier proposera de tout ajouter.' }),
-      // Un fichier importé ne peut qu'ajouter et remplacer. Supprimer, non :
-      // aucun calendrier n'obéit à une annulation venue d'un simple import.
-      plan.retires ? el('p', { class: 'tpt', style: 'margin:0 0 .6rem;color:var(--danger)',
-        text: plan.retires + ' repas retiré' + (plan.retires > 1 ? 's' : '') + ' de la semaine depuis le dernier envoi — ' +
-          'à supprimer à la main dans votre calendrier, un import ne sait pas le faire.' }) : null,
-      el('div', { class: 'menu-actions' }, [lien]),
-    ],
+    corps: corps,
     actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
   });
   setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
@@ -6042,6 +6092,13 @@ function blocAbonnement() {
   ]));
   bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:.4rem 0 0',
     text: 'Laissez « Supprimer les alarmes » désactivé, sinon plus de rappel.' }));
+  // Les deux mécanismes cohabitent sans se voir : le calendrier abonné est un
+  // calendrier à part. Ce qu'un fichier a déposé ailleurs, l'abonnement ne
+  // peut pas l'atteindre — et c'est ce qui donne l'impression qu'il n'efface
+  // rien, alors qu'il remplace bien tout ce qui lui appartient.
+  bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:.3rem 0 0',
+    text: 'Si vous aviez déjà importé un fichier .ics, ces repas-là sont dans un autre ' +
+          'calendrier : l\'abonnement ne peut pas les retirer. Supprimez-les une fois à la main.' }));
   bloc.appendChild(el('button', {
     type: 'button', class: 'btn mini fantome danger', style: 'margin-top:.3rem',
     text: 'Révoquer', title: 'L\'adresse cesse de répondre ; les calendriers déjà abonnés se figent',
