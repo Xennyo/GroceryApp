@@ -99,6 +99,10 @@
 /* ——— BASE ——— */
 *,*::before,*::after{ box-sizing:border-box; }
 html,body{ margin:0; padding:0; }
+/* Deux appuis rapides sur un téléphone font zoomer : c'est une gêne constante
+   dans une liste où l'on coche vite. « manipulation » supprime ce geste — et
+   lui seul : le pincement pour agrandir reste, il ne faut jamais l'enlever. */
+html{ touch-action:manipulation; }
 body{
   background:var(--bg);
   color:var(--texte);
@@ -226,6 +230,10 @@ main{
   stroke-width:1.7; stroke-linecap:round; stroke-linejoin:round; }
 .tabbar button[aria-current="page"]{ color:var(--accent); }
 .tabbar button[aria-current="page"] .ic{ stroke-width:2; }
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="clair"]) .pastille-rayon{ background:hsl(var(--teinte, 0) 46% 60%); }
+}
+:root[data-theme="sombre"] .pastille-rayon{ background:hsl(var(--teinte, 0) 46% 60%); }
 
 @media (min-width:900px){
   #app{ flex-direction:row; }
@@ -255,6 +263,9 @@ main{
 .tpt{ font-size:var(--t-micro); }
 .gras{ font-weight:var(--g-moyen); }
 .rien{ color:var(--texte-doux); padding:var(--e6) var(--e2); text-align:center; font-size:var(--t-base); }
+.etat-vide{ display:flex; flex-direction:column; align-items:center; gap:var(--e2); }
+.etat-vide p{ margin:0; }
+.ic-vide{ width:46px; height:46px; stroke-width:1.25; color:var(--border-fort); }
 
 .btn{
   font:inherit; font-size:var(--t-base); font-weight:var(--g-moyen); cursor:pointer;
@@ -482,6 +493,15 @@ label.champ > span{ display:block; font-size:var(--t-petit); font-weight:var(--g
   border-right:1.6px solid currentColor; border-bottom:1.6px solid currentColor;
   transform:rotate(-45deg); transition:transform 140ms ease; margin-left:2px; }
 .rayon[open] > summary::before{ transform:rotate(45deg); }
+/* Une pastille par rayon : en magasin on cherche le rayon avant l'article, et
+   une couleur se repère plus vite qu'un mot. Seule la teinte change d'un rayon
+   à l'autre ; saturation et clarté sont fixées ici, une paire par thème, pour
+   que les douze restent lisibles et se ressemblent en famille. */
+.pastille-rayon{
+  flex:0 0 auto; width:9px; height:9px; border-radius:50%;
+  background:hsl(var(--teinte, 0) 52% 42%);
+}
+.rayon.sans-teinte .pastille-rayon{ background:var(--border-fort); }
 /* Dans un magasin on cherche le NOM du produit : c'est lui qui porte le gras,
    la quantité se lit une fois qu'on l'a trouvé. */
 .article{ display:flex; align-items:center; gap:0; position:relative; }
@@ -776,6 +796,14 @@ const RAYONS = [
   ['autre',          'Autre'],
 ];
 const RAYON_LIBELLE = Object.fromEntries(RAYONS);
+// Une teinte par rayon. Seule la teinte change ; saturation et clarté sont
+// fixées en CSS, une paire pour le thème clair et une pour le sombre — c'est
+// ce qui garantit que les douze restent lisibles et se ressemblent en famille.
+const RAYON_TEINTE = {
+  fruits_legumes: 128, boucherie: 355, poissonnerie: 202, cremerie: 45,
+  charcuterie: 18, epicerie_salee: 32, epicerie_sucree: 320, pain: 38,
+  surgeles: 190, boissons: 172, hygiene: 268, autre: 0,
+};
 const RAYONS_IDS = RAYONS.map(function (r) { return r[0]; });
 const ORDRE_RAYONS_DEFAUT = RAYONS_IDS.slice();
 
@@ -2757,7 +2785,21 @@ const ICONES = {
   televerser: '<path d="M12 20V9"/><path d="M7.5 13.5 12 9l4.5 4.5"/><path d="M5 5h14"/>',
   balai: '<path d="M14 4 9 9"/><path d="M11.5 6.5 17.5 12.5"/><path d="M9.5 8.5 4.2 13.8a2 2 0 0 0 0 2.8l3.2 3.2a2 2 0 0 0 2.8 0l5.3-5.3z"/>',
   refaire: '<path d="M20 12a8 8 0 1 1-2.4-5.7"/><path d="M20 4v5h-5"/>',
+  loupe: '<circle cx="10.5" cy="10.5" r="6.5"/><path d="M15.4 15.4 21 21"/>',
 };
+/**
+ * Écran vide : une icône au trait, une phrase, parfois une action. Du texte
+ * gris seul au milieu d'un écran ressemble à une panne ; un dessin dit que
+ * l'endroit est simplement en attente.
+ */
+function etatVide(nomIcone, phrase, bouton) {
+  return el('div', { class: 'rien etat-vide' }, [
+    icone(nomIcone, 'ic-vide'),
+    el('p', { text: phrase }),
+    bouton || null,
+  ]);
+}
+
 /** Icône du jeu, en SVG. La taille se règle en CSS par la classe. */
 function icone(nom, classe) {
   const n = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
@@ -3595,10 +3637,9 @@ function vueSemaine() {
 
     if (!D.recettes.length) {
       remplirFiltres(0);
-      grille.appendChild(el('div', { class: 'rien' }, [
-        el('p', { text: 'Aucune recette pour l\'instant.' }),
-        el('button', { type: 'button', class: 'btn principal', text: 'Créer ma première recette', onclick: function () { allerA('recettes'); ouvrirEditeurRecette(null); } }),
-      ]));
+      grille.appendChild(etatVide('livre', 'Aucune recette pour l\'instant.',
+        el('button', { type: 'button', class: 'btn principal', text: 'Créer ma première recette',
+          onclick: function () { allerA('recettes'); ouvrirEditeurRecette(null); } })));
       return;
     }
 
@@ -3626,7 +3667,7 @@ function vueSemaine() {
       ]));
     }
     if (!trouvees.length) {
-      grille.appendChild(el('div', { class: 'rien', text: 'Aucune recette ne correspond.' }));
+      grille.appendChild(etatVide('loupe', 'Aucune recette ne correspond.'));
       return;
     }
 
@@ -4106,9 +4147,7 @@ function vueListe() {
   v.appendChild(entete);
 
   if (!modele.articles.length && !modele.placard.length) {
-    v.appendChild(el('div', { class: 'rien' }, [
-      el('p', { text: 'La liste est vide.' }),
-    ]));
+    v.appendChild(etatVide('panier', 'La liste est vide.'));
   }
 
   // Rayons
@@ -4122,8 +4161,11 @@ function vueListe() {
     const ouvert = (cleOuvert in etat.rayonsOuverts) ? etat.rayonsOuverts[cleOuvert] : !g.tousCoches;
 
     const bloc = el('details', { class: 'rayon', open: ouvert });
+    bloc.style.setProperty('--teinte', RAYON_TEINTE[g.rayon] !== undefined ? RAYON_TEINTE[g.rayon] : 0);
+    if (g.rayon === 'autre') bloc.classList.add('sans-teinte');
     bloc.addEventListener('toggle', function () { etat.rayonsOuverts[cleOuvert] = bloc.open; });
     const resume = el('summary', {}, [
+      el('span', { class: 'pastille-rayon', 'aria-hidden': 'true' }),
       el('span', { text: g.libelle }),
       el('span', { class: 'compte', text: g.nbCoches + '/' + g.articles.length }),
     ]);
@@ -4146,9 +4188,12 @@ function vueListe() {
 
   // Section placard, repliée, hors total
   if (modele.placard.length) {
-    const bloc = el('details', { class: 'rayon', open: etat.placardOuvert });
+    // Le placard n'est pas un rayon du magasin : pastille neutre, pour que les
+    // en-têtes restent alignés sans lui inventer une couleur.
+    const bloc = el('details', { class: 'rayon sans-teinte', open: etat.placardOuvert });
     bloc.addEventListener('toggle', function () { etat.placardOuvert = bloc.open; });
     bloc.appendChild(el('summary', {}, [
+      el('span', { class: 'pastille-rayon', 'aria-hidden': 'true' }),
       el('span', { text: 'À vérifier au placard' }),
       el('span', { class: 'compte', text: modele.placard.length + ' produit' + (modele.placard.length > 1 ? 's' : '') }),
     ]));
@@ -4215,8 +4260,8 @@ function vueListe() {
   }
   if (afficherPrix()) {
     v.appendChild(el('p', { class: 'tpt doux', text:
-      'Total de la liste : ' + texteTotal(t.totalTous, t.sansPrixTous) +
-      ' · les produits de placard et les articles ajoutés à la main ne sont pas comptés.' }));
+      'Total : ' + texteTotal(t.totalTous, t.sansPrixTous) +
+      ' · hors placard et ajouts manuels' }));
   }
 
   window.scrollTo(0, scroll);
@@ -4755,7 +4800,11 @@ function vueRecettes() {
     }).sort(function (a, b) { return a.nom.localeCompare(b.nom, 'fr'); });
 
     if (!recettes.length) {
-      grille.appendChild(el('div', { class: 'rien', text: D.recettes.length ? 'Aucune recette ne correspond.' : 'Aucune recette. Créez la première.' }));
+      grille.appendChild(D.recettes.length
+        ? etatVide('loupe', 'Aucune recette ne correspond.')
+        : etatVide('livre', 'Aucune recette pour l\'instant.',
+            el('button', { type: 'button', class: 'btn principal', text: 'Créer ma première recette',
+              onclick: function () { ouvrirEditeurRecette(null); } })));
       return;
     }
     recettes.forEach(function (r) {
@@ -5880,7 +5929,7 @@ function sectionHistorique() {
   const carteHisto = el('div', { class: 'carte' });
   carteHisto.appendChild(el('h2', { text: 'Historique des semaines' }));
   if (!D.historique.length) {
-    carteHisto.appendChild(el('p', { class: 'doux pt', text: 'Aucune semaine archivée.' }));
+    carteHisto.appendChild(etatVide('archive', 'Aucune semaine archivée.'));
   } else {
     D.historique.forEach(function (h, idx) {
       const noms = h.selection.map(function (s) { const r = recetteParId(s.recetteId); return r ? r.nom + ' ×' + s.portions : null; }).filter(Boolean);
@@ -6312,7 +6361,7 @@ function panneauDuJour(corps, iso) {
 
   const repas = selectionDuJour(D, iso);
   if (!repas.length) {
-    bloc.appendChild(el('p', { class: 'pt doux', style: 'margin:.2rem 0', text: 'Aucun repas prévu ce jour-là.' }));
+    bloc.appendChild(etatVide('calendrier', 'Aucun repas prévu ce jour-là.'));
   } else {
     repas.forEach(function (e) {
       const r = recetteParId(e.recetteId);
