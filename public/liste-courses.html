@@ -770,6 +770,28 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
    instant — seule la préférence du système est connue, et c'est elle qui
    décide de la version sombre.
    ------------------------------------------------------------------------- */
+/* En-tête de l'éditeur de recette : il reste au-dessus du contenu pendant
+   qu'on fait défiler, pour que la sortie soit toujours à portée. */
+.entete-editeur{
+  position:sticky; top:var(--h-topbar,0px); z-index:26;
+  display:flex; align-items:center; gap:.5rem;
+  margin:0 0 .6rem; padding:.5rem 0;
+  background:var(--bg);
+  border-bottom:1px solid var(--border);
+}
+.entete-editeur h2{ flex:1 1 auto; min-width:0; }
+.fermer-editeur{
+  flex:0 0 auto; width:38px; height:38px; border-radius:50%;
+  border:1px solid var(--border); background:var(--surface); color:var(--texte-doux);
+  font-size:1.5rem; line-height:1; cursor:pointer;
+}
+.fermer-editeur:hover{ background:var(--surface-2); color:var(--texte); }
+
+/* Une rangée d'actions de même poids : largeurs égales, texte centré. Des
+   boutons de tailles inégales alignés à gauche se lisent comme un tas. */
+.barre-actions.egales{ gap:.5rem; }
+.barre-actions.egales .btn{ flex:1 1 0; min-width:0; justify-content:center; }
+
 #ecran-lancement{
   position:fixed; inset:0; z-index:200;
   display:flex; align-items:center; justify-content:center;
@@ -3764,13 +3786,24 @@ function vueSemaine() {
   const recap = el('div', { class: 'carte recap', id: 'recap-semaine' });
   v.appendChild(recap);
 
-  v.appendChild(el('div', { class: 'barre-actions', style: 'margin-top:.6rem' }, [
-    el('button', { type: 'button', class: 'btn', onclick: ajouterAuCalendrier },
-      [icone('calendrier'), el('span', { text: 'Ajouter au calendrier' })]),
-    el('button', { type: 'button', class: 'btn', text: 'Vider la semaine', onclick: viderSemaine }),
-    el('button', { type: 'button', class: 'btn', text: 'Enregistrer comme semaine type', onclick: enregistrerSemaineType }),
-    el('button', { type: 'button', class: 'btn', text: 'Semaines types', onclick: chargerSemaineType }),
-    el('button', { type: 'button', class: 'btn', text: 'Reprendre la semaine dernière', onclick: reprendreSemaineDerniere }),
+  // Cinq boutons empilés se lisaient comme un tas, alors qu'ils ne servent pas
+  // au même moment : remplir une semaine vide, ou agir sur une semaine faite.
+  // On montre donc les deux façons de la remplir quand elle est vide, et un
+  // seul bouton le reste du temps.
+  // Quand la semaine est vide, les deux façons de la remplir passent devant :
+  // c'est exactement ce qu'on cherche à ce moment-là. Le menu, lui, reste
+  // toujours présent — le laisser disparaître rendait le calendrier
+  // inatteignable sur une semaine vide.
+  if (!selectionActive(D).length) {
+    v.appendChild(el('div', { class: 'barre-actions egales', style: 'margin-top:.6rem' }, [
+      el('button', { type: 'button', class: 'btn', text: 'Reprendre la semaine dernière',
+        onclick: reprendreSemaineDerniere }),
+      el('button', { type: 'button', class: 'btn', text: 'Semaines types', onclick: chargerSemaineType }),
+    ]));
+  }
+  v.appendChild(el('div', { class: 'barre-actions egales', style: 'margin-top:.5rem' }, [
+    el('button', { type: 'button', class: 'btn', onclick: menuSemaine },
+      [icone('points'), el('span', { text: 'Actions de la semaine' })]),
   ]));
 
   function bascule(libelle, actif, surClic) {
@@ -4121,6 +4154,30 @@ function evolutionCout(coutActuel) {
   const signe = delta >= 0 ? '+' : '−';
   return 'Semaine précédente (' + formatDateCourte(precedent.date) + ') : ' + formatEuroFixe(precedent.coutEstime) +
     ' · ' + signe + ' ' + formatEuroFixe(Math.abs(delta));
+}
+
+/**
+ * Tout ce qu'on peut faire d'une semaine, en un endroit. Rangé du plus utile
+ * au plus rare, l'action destructrice détachée en bas.
+ */
+function menuSemaine() {
+  const item = function (libelle, nomIcone, action, classe) {
+    return el('button', {
+      type: 'button', class: 'btn ' + (classe || ''),
+      onclick: function () { fermerModale(); action(); },
+    }, [icone(nomIcone), el('span', { text: libelle })]);
+  };
+  ouvrirModale({
+    titre: 'Actions de la semaine',
+    corps: [el('div', { class: 'menu-actions' }, [
+      item('Ajouter au calendrier', 'calendrier', ajouterAuCalendrier),
+      item('Enregistrer comme semaine type', 'disque', enregistrerSemaineType),
+      item('Semaines types', 'archive', chargerSemaineType),
+      item('Reprendre la semaine dernière', 'refaire', reprendreSemaineDerniere),
+      item('Vider la semaine', 'balai', viderSemaine, 'danger'),
+    ])],
+    actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
+  });
 }
 
 async function viderSemaine() {
@@ -5122,6 +5179,10 @@ function ouvrirEditeurRecette(recette) {
   if (!Array.isArray(copie.saisons)) copie.saisons = [];
   if (!copie.lignes.length) copie.lignes.push(ligneVide());
   etat.editionRecette = { travail: copie, idOriginal: recette ? recette.id : null };
+  // Les quantités s'écrivent pour le nombre de portions de la recette. Sans
+  // ça, une nouvelle recette se saisissait « pour 1 portion » alors qu'on
+  // recopie une fiche prévue pour quatre — et tout était multiplié par quatre.
+  etat.baseSaisie = copie.portionsDefaut || 4;
   etat.editeurDom = null;
   allerA('recettes');
 }
@@ -5141,21 +5202,22 @@ function construireEditeurRecette() {
 
   // En-tête : titre, coût par portion, actions
   const enteteCout = el('span', { class: 'puce accent', text: '' });
-  racine.appendChild(el('div', { class: 'barre-actions', style: 'justify-content:space-between;align-items:center;margin-bottom:.6rem' }, [
+  // L'éditeur occupe tout l'onglet : sans sortie visible en permanence, il
+  // fallait faire défiler jusqu'en bas pour trouver « Annuler ». L'en-tête
+  // reste donc au-dessus du contenu, avec la croix.
+  racine.appendChild(el('div', { class: 'entete-editeur' }, [
     el('h2', { style: 'margin:0', text: ed.idOriginal ? 'Modifier la recette' : 'Nouvelle recette' }),
     enteteCout,
+    el('button', {
+      type: 'button', class: 'fermer-editeur', 'aria-label': 'Fermer sans enregistrer',
+      title: 'Fermer sans enregistrer', text: '×', onclick: fermerEditeurRecette,
+    }),
   ]));
 
-  // Le piège n°1 de ce type d'application : le rappel reste visible en
-  // permanence, et il dit la base réellement utilisée à la saisie.
-  const rappel = el('div', { class: 'rappel' });
-  racine.appendChild(rappel);
-  function majRappel() {
-    const b = etat.baseSaisie;
-    rappel.textContent = (b === 1)
-      ? '⚠︎ Quantités pour 1 portion'
-      : '⚠︎ Quantités saisies pour ' + b + ' portions — enregistrées ramenées à 1 portion';
-  }
+  // Le rappel permanent de la base de saisie a disparu avec la base elle-même :
+  // les quantités s'écrivent maintenant pour le nombre de portions de la
+  // recette, un seul nombre au lieu de deux à tenir d'accord.
+  function majRappel() {}
 
   // Le formulaire à gauche, l'aperçu à droite sur grand écran ; dessous sur mobile.
   const colonneForm = el('div', { class: 'col-form' });
@@ -5193,6 +5255,16 @@ function construireEditeurRecette() {
     r.portionsDefaut = (n && n > 0) ? Math.min(99, Math.round(n)) : 4;
     majApercuRecette();
   });
+  // À la sortie du champ seulement : redessiner les lignes à chaque frappe
+  // ferait sauter le curseur. La recette par portion ne change pas, c'est
+  // l'échelle d'affichage qui suit.
+  champPortions.addEventListener('change', function () {
+    etat.baseSaisie = r.portionsDefaut || 4;
+    champPortions.value = etat.baseSaisie;
+    majTitreIngredients();
+    rendreLignes();
+    majApercuRecette();
+  });
 
   colonneForm.appendChild(el('div', { class: 'carte' }, [
     el('label', { class: 'champ' }, [el('span', { text: 'Nom de la recette' }), champNom]),
@@ -5211,30 +5283,16 @@ function construireEditeurRecette() {
   // Lignes d'ingrédients
   const conteneurLignes = el('div', { class: 'lignes-ing', id: 'lignes-ing' });
   const titreIngredients = el('h3');
-  // Une recette de livre donne « 400 g pour 4 personnes ». Plutôt que de faire
-  // diviser l'utilisateur ligne par ligne, on saisit tel quel et l'app divise.
-  const champBase = el('input', {
-    type: 'text', inputmode: 'numeric', value: etat.baseSaisie, id: 'base-saisie',
-    style: 'width:76px;flex:0 0 auto', 'aria-label': 'Nombre de portions de la recette saisie',
-  });
-  champBase.addEventListener('change', function () {
-    const n = parseNombre(champBase.value);
-    etat.baseSaisie = (n && n > 0) ? Math.min(99, Math.round(n)) : 1;
-    champBase.value = etat.baseSaisie;
-    majRappel(); majTitreIngredients(); rendreLignes();
-  });
+  // Une recette de livre donne « 400 g pour 4 personnes ». On écrit donc les
+  // quantités telles qu'elles sont sur la fiche, pour le nombre de portions
+  // de la recette — l'application les ramène à la portion pour son calcul.
+  // Il y avait deux nombres à tenir d'accord ; il n'y en a plus qu'un.
   function majTitreIngredients() {
-    titreIngredients.textContent = (etat.baseSaisie === 1)
-      ? 'Ingrédients — quantités pour 1 portion'
-      : 'Ingrédients — quantités telles qu\'écrites sur la recette';
+    titreIngredients.textContent = 'Ingrédients — pour ' + etat.baseSaisie +
+      (etat.baseSaisie > 1 ? ' portions' : ' portion');
   }
   colonneForm.appendChild(el('div', { class: 'carte' }, [
     titreIngredients,
-    el('div', { class: 'barre-portions', style: 'margin-bottom:.5rem' }, [
-      el('label', { class: 'libelle', for: 'base-saisie', text: 'Quantités saisies pour' }),
-      champBase,
-      el('span', { class: 'libelle', style: 'flex:0 0 auto', text: 'portions' }),
-    ]),
     conteneurLignes,
     el('div', { class: 'barre-actions', style: 'margin-top:.5rem' }, [
       el('button', { type: 'button', class: 'btn', text: '+ Ajouter une ligne', onclick: function () { r.lignes.push(ligneVide()); rendreLignes({ index: r.lignes.length - 1, champ: 'ing' }); } }),
@@ -5255,9 +5313,10 @@ function construireEditeurRecette() {
   colonneApercu.appendChild(apercu);
 
   // Actions
+  // « Annuler » a disparu : la croix de l'en-tête est visible en permanence,
+  // là où ce bouton demandait de défiler jusqu'en bas pour être trouvé.
   const actions = el('div', { class: 'barre-actions' }, [
     el('button', { type: 'button', class: 'btn principal', text: 'Enregistrer', onclick: enregistrerRecette }),
-    el('button', { type: 'button', class: 'btn', text: 'Annuler', onclick: fermerEditeurRecette }),
   ]);
   if (ed.idOriginal) {
     actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Dupliquer', onclick: function () { const o = recetteParId(ed.idOriginal); if (o) dupliquerRecette(o); } }));
@@ -5605,7 +5664,10 @@ async function appliquerCollage(rangs, portionsCollage) {
   // Les quantités collées valent pour le nombre de personnes de la recette
   // source ; le modèle, lui, ne connaît que « pour 1 portion ».
   const base = portionsCollage || etat.baseSaisie;
-  if (portionsCollage) { etat.baseSaisie = portionsCollage; }
+  if (portionsCollage) {
+    etat.baseSaisie = portionsCollage;
+    r.portionsDefaut = portionsCollage;
+  }
 
   let ajoutees = 0, creees = 0, ajustees = 0;
   const idsAvant = new Set(D.ingredients.map(function (i) { return i.id; }));
