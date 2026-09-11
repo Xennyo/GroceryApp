@@ -770,6 +770,13 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
    instant — seule la préférence du système est connue, et c'est elle qui
    décide de la version sombre.
    ------------------------------------------------------------------------- */
+.fermer-toast{
+  flex:0 0 auto; margin-left:.15rem; width:28px; height:28px; border-radius:50%;
+  border:0; background:transparent; color:inherit; opacity:.65;
+  font-size:1.25rem; line-height:1; cursor:pointer;
+}
+.fermer-toast:hover{ opacity:1; }
+
 /* En-tête de l'éditeur de recette : il reste au-dessus du contenu pendant
    qu'on fait défiler, pour que la sortie soit toujours à portée. */
 .entete-editeur{
@@ -1040,6 +1047,9 @@ function donneesVides() {
     },
     historique: [],
     semainesTypes: [],
+    // Qui partage cet espace. Partagé, donc : chacun s'y déclare, et les
+    // autres voient un prénom plutôt qu'un identifiant.
+    membres: [],
     // L'apparence et les rappels n'y figurent pas : ils décrivent un appareil,
     // pas une liste de courses. Voir REGLAGES_APPAREIL_DEFAUT.
     reglages: {
@@ -1066,6 +1076,7 @@ function donneesVides() {
    jamais sur le réseau.
    ------------------------------------------------------------------------- */
 const REGLAGES_APPAREIL_DEFAUT = {
+  prenom: '',
   theme: 'auto',
   policeTitres: 'livre',
   afficherPrix: true,
@@ -1093,6 +1104,7 @@ function reglerAppareil(nom, valeur) {
 function normaliserReglagesAppareil(r) {
   const g = (r && typeof r === 'object') ? r : {};
   return {
+    prenom: String(g.prenom || '').slice(0, 40),
     theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
     policeTitres: g.policeTitres === 'systeme' ? 'systeme' : 'livre',
     afficherPrix: g.afficherPrix !== false,
@@ -1277,6 +1289,16 @@ function normaliserRacine(d) {
     dateModification: String(s.dateModification || new Date().toISOString()),
   };
 
+  out.membres = (Array.isArray(d.membres) ? d.membres : []).filter(function (m) {
+    return m && typeof m.id === 'string' && m.id;
+  }).map(function (m) {
+    return {
+      id: String(m.id),
+      prenom: String(m.prenom || '').slice(0, 40),
+      vuLe: (typeof m.vuLe === 'string') ? m.vuLe : aujourdHuiISO(),
+    };
+  });
+
   out.historique = (Array.isArray(d.historique) ? d.historique : []).map(function (h) {
     return {
       date: String((h && h.date) || aujourdHuiISO()),
@@ -1435,6 +1457,17 @@ const Store = (function () {
   }
 
   const copie = function (o) { return o === null || o === undefined ? o : JSON.parse(JSON.stringify(o)); };
+
+  function octetsAleatoiresLocal(n) {
+    const t = new Uint8Array(n);
+    crypto.getRandomValues(t);
+    return t;
+  }
+  function base64urlLocal(octets) {
+    let binaire = '';
+    for (let i = 0; i < octets.length; i++) binaire += String.fromCharCode(octets[i]);
+    return btoa(binaire).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  }
 
   /* --- Réglages propres à l'appareil ---------------------------------------
      Ils décrivent comment CE téléphone présente la liste — son thème, sa
@@ -1642,6 +1675,20 @@ const Store = (function () {
       });
       if (change) ecrireAppareil();
       return copie(r);
+    },
+
+    /**
+     * Identifiant stable de cet appareil. Sert à se reconnaître dans la liste
+     * des membres d'un espace : l'auteur des opérations, lui, est retiré au
+     * hasard à chaque session et ne dit rien d'une personne.
+     */
+    identifiantAppareil() {
+      const r = lireAppareil();
+      if (!r.appareilId) {
+        r.appareilId = 'ap_' + base64urlLocal(octetsAleatoiresLocal(9)).toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 10);
+        ecrireAppareil();
+      }
+      return r.appareilId;
     },
 
     /** Lu avant le premier affichage, donc avant que load() ne rende la main. */
@@ -2813,6 +2860,7 @@ const COLLECTIONS_CLEF = {
   'semainesTypes': 'id',
   'semaine.selection': 'id',
   'semaine.ajoutsManuels': 'id',
+  'membres': 'id',
 };
 
 // Valeurs traitées d'un bloc : les découper apporterait de la complexité sans
@@ -3058,6 +3106,9 @@ function el(tag, attrs, enfants) {
 }
 
 /* --- Toasts et bandeau d'annulation (5 s) --- */
+const TOAST_MS = 3000;          // simple message
+const TOAST_ANNULATION_MS = 4000;   // avec un « Annuler » à saisir
+
 function toast(message, options) {
   const opt = options || {};
   const zone = $('#zone-toasts');
@@ -3071,13 +3122,19 @@ function toast(message, options) {
       onclick: function () { fermer(); opt.onAction(); },
     }));
   }
+  // Une croix pour l'écarter tout de suite : un bandeau qui masque le bas de
+  // l'écran le temps qu'il veut est plus gênant que le délai lui-même.
+  boite.appendChild(el('button', {
+    type: 'button', class: 'fermer-toast', 'aria-label': 'Masquer ce message',
+    title: 'Masquer', text: '×', onclick: fermer,
+  }));
   zone.appendChild(boite);
-  minuteur = setTimeout(fermer, opt.duree || 4000);
+  minuteur = setTimeout(fermer, opt.duree || TOAST_MS);
   return fermer;
 }
 /** Suppression annulable pendant 5 secondes. */
 function supprimerAvecAnnulation(libelle, restaurer) {
-  toast(libelle + ' — supprimé', { duree: 5000, actionLabel: 'Annuler', onAction: restaurer });
+  toast(libelle + ' — supprimé', { duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler', onAction: restaurer });
 }
 
 /* --- Modale --- */
@@ -4134,7 +4191,7 @@ async function changerPortionsBase(delta) {
   rendre();
   if (selAvant.length) {
     toast('Semaine passée à ' + apres + ' portions', {
-      duree: 5000, actionLabel: 'Annuler',
+      duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
       onAction: async function () {
         D.reglages.portionsBase = avant;
         D.semaine.selection = selAvant;
@@ -4217,7 +4274,7 @@ async function viderSemaine() {
   await sauvegarder();
   rendre();
   toast('Semaine archivée et vidée', {
-    duree: 5000, actionLabel: 'Annuler',
+    duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
     onAction: async function () {
       D.semaine.selection = ancienne.selection;
       D.semaine.coches = ancienne.coches;
@@ -4304,7 +4361,7 @@ async function appliquerSemaineType(type, mode) {
     await sauvegarder();
     rendre();
     toast('« ' + type.nom +' » a remplacé la sélection', {
-      duree: 5000, actionLabel: 'Annuler',
+      duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
       onAction: async function () {
         D.semaine.selection = avant; D.semaine.coches = cochesAvant;
         await sauvegarder(); rendre();
@@ -4314,10 +4371,14 @@ async function appliquerSemaineType(type, mode) {
   }
 
   // Ajout : les recettes déjà retenues gardent le nombre de portions choisi.
+  // On compare le couple recette + jour, et non la recette seule : une semaine
+  // type peut poser le même plat le lundi et le jeudi, et sauter le second
+  // parce que le premier existe déjà revenait à perdre un jour sur deux.
   const ajoutees = [];
   let deja = 0;
   voulue.forEach(function (s) {
-    if (selectionDe(s.recetteId)) { deja += 1; return; }
+    const dejaCeJour = entreesDe(s.recetteId).some(function (e) { return e.date === s.date; });
+    if (dejaCeJour) { deja += 1; return; }
     const entree = nouvelleEntree(s.recetteId, s.portions, s.date);
     D.semaine.selection.push(entree);
     ajoutees.push(entree.id);
@@ -4331,7 +4392,7 @@ async function appliquerSemaineType(type, mode) {
   const message = ajoutees.length + (ajoutees.length > 1 ? ' recettes ajoutées' : ' recette ajoutée') +
     (deja ? ' · ' + deja + ' déjà présente' + (deja > 1 ? 's' : '') : '');
   toast(message, {
-    duree: 5000, actionLabel: 'Annuler',
+    duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
     onAction: async function () {
       D.semaine.selection = D.semaine.selection.filter(function (s) { return ajoutees.indexOf(s.id) < 0; });
       await sauvegarder(); rendre();
@@ -4378,7 +4439,7 @@ async function effacerDonneesExemple() {
   await sauvegarder();
   rendre();
   toast('Données d\'exemple effacées', {
-    duree: 5000, actionLabel: 'Annuler',
+    duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
     onAction: async function () { D = normaliserRacine(avant); await Store.save(D); rendre(); },
   });
 }
@@ -4447,7 +4508,7 @@ function vueListe() {
     v.appendChild(el('div', { class: 'carte plate pt doux' }, [
       el('span', { text: aClasser.length + ' ingrédient' + (aClasser.length > 1 ? 's sont' : ' est') + ' encore dans « Autre ». ' }),
       el('button', { type: 'button', class: 'btn mini', text: 'Les classer',
-        onclick: function () { etat.refOuvert = true; allerAuxReglages('reglages'); } }),
+        onclick: function () { etat.refOuvert = true; allerAuxReglages('ingredients'); } }),
     ]));
   }
 
@@ -4693,7 +4754,7 @@ async function reinitialiserCases() {
   await sauvegarder();
   vueListe();
   toast(n + ' case' + (n > 1 ? 's décochées' : ' décochée'), {
-    duree: 5000, actionLabel: 'Annuler',
+    duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
     onAction: async function () { D.semaine.coches = ancien; await sauvegarder(); vueListe(); },
   });
 }
@@ -4743,82 +4804,67 @@ function listeEnTexte() {
  * L'abonnement est donc proposé en premier dès qu'il est possible, et le
  * fichier ne se présente plus sans dire ce qu'il ne sait pas faire.
  */
+/**
+ * Le calendrier du téléphone se tient à jour par abonnement, pas par fichier :
+ * un fichier importé sait ajouter et mettre à jour, jamais retirer. On ne
+ * propose donc que l'abonnement — le téléchargement ne reste que là où
+ * l'abonnement est impossible, faute d'espace partagé.
+ */
 async function ajouterAuCalendrier() {
   const plan = planEnIcs(D, { heure: RA.heureRepas, rappel: RA.rappelMinutes });
   if (!plan.nb && !plan.retires) {
     toast('Aucun repas daté dans la période — donnez-leur un jour d\'abord.');
     return;
   }
-  const nomFichier = 'repas-' + D.semaine.periode.debut + '.ics';
-  const url = URL.createObjectURL(new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' }));
   const adresse = D.reglages.abonnementCalendrier;
   const peutSAbonner = !!(infosEspaces && infosEspaces.courant);
 
-  const resume = plan.nb + ' repas' +
-    (RA.rappelMinutes ? ' · rappel ' + libelleRappel(RA.rappelMinutes) : '');
-
-  const lienFichier = el('a', {
-    href: url, download: nomFichier,
-    class: adresse ? 'btn mini fantome' : 'btn', style: 'text-decoration:none',
-  }, [el('span', { text: adresse ? 'Télécharger le fichier quand même' : 'Télécharger le fichier' })]);
-  // Mémorisé au moment où le fichier part : réexporter mettra les événements à
-  // jour au lieu de les dupliquer. Fermer sans rien prendre ne mémorise rien.
-  lienFichier.addEventListener('click', async function () {
-    fermerModale();
-    D.reglages.calendrierExporte = plan.exportes;
-    await sauvegarder();
-  });
-
-  const corps = [el('p', { class: 'pt doux', style: 'margin:0 0 .6rem', text: resume })];
+  const corps = [el('p', { class: 'pt doux', style: 'margin:0 0 .6rem',
+    text: plan.nb + ' repas' + (RA.rappelMinutes ? ' · rappel ' + libelleRappel(RA.rappelMinutes) : '') })];
+  const actions = [];
 
   if (adresse) {
-    // Déjà abonné : le calendrier se tient à jour tout seul, et proposer un
-    // fichier en premier ne ferait que réintroduire des repas indéboulonnables.
-    corps.push(el('p', { class: 'tpt', style: 'margin:0 0 .6rem',
-      text: 'Ce calendrier est abonné : il se met à jour tout seul, suppressions comprises. ' +
-            'Il n\'y a rien à faire ici.' }));
-    corps.push(el('div', { class: 'menu-actions' }, [
-      el('a', { href: adresse.replace(/^https?:/, 'webcal:'), class: 'btn principal',
-        style: 'text-decoration:none' },
-        [icone('calendrier'), el('span', { text: 'Abonner un autre appareil' })]),
-      lienFichier,
-    ]));
+    corps.push(el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem', text: 'Ce calendrier est abonné.' }));
+    actions.push(el('a', {
+      href: adresse.replace(/^https?:/, 'webcal:'), class: 'btn principal', style: 'text-decoration:none',
+    }, [icone('calendrier'), el('span', { text: 'Abonner un autre appareil' })]));
+  } else if (peutSAbonner) {
+    actions.push(el('button', {
+      type: 'button', class: 'btn principal',
+      onclick: async function () { fermerModale(); await creerAbonnementCalendrier(); },
+    }, [icone('calendrier'), el('span', { text: 'Créer un abonnement' })]));
   } else {
-    corps.push(el('p', { class: 'tpt', style: 'margin:0 0 .6rem;color:var(--danger)',
-      text: 'Un fichier téléchargé sait ajouter et mettre à jour, jamais supprimer. ' +
-            'Un repas retiré de la semaine restera dans votre calendrier.' }));
-    const actions = [];
-    if (peutSAbonner) {
-      corps.push(el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
-        text: 'L\'abonnement, lui, relit l\'adresse et remplace son contenu : c\'est le seul ' +
-              'qui fasse suivre les suppressions.' }));
-      actions.push(el('button', {
-        type: 'button', class: 'btn principal', onclick: async function () {
-          fermerModale();
-          await creerAbonnementCalendrier();
-        },
-      }, [icone('calendrier'), el('span', { text: 'Créer un abonnement' })]));
-    } else {
-      corps.push(el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
-        text: 'L\'abonnement demande un espace partagé — voir Plus → Synchronisation.' }));
-    }
-    actions.push(lienFichier);
-    corps.push(el('div', { class: 'menu-actions' }, actions));
+    // Sans espace partagé il n'y a pas d'adresse à relire : le fichier reste
+    // le seul chemin, avec sa limite dite une fois.
+    corps.push(el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem',
+      text: 'L\'abonnement demande un espace partagé — voir Plus → Synchronisation. ' +
+            'À défaut, un fichier ajoute les repas mais ne saura pas les retirer.' }));
+    const nomFichier = 'repas-' + D.semaine.periode.debut + '.ics';
+    const url = URL.createObjectURL(new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' }));
+    const lien = el('a', { href: url, download: nomFichier, class: 'btn', style: 'text-decoration:none' },
+      [el('span', { text: 'Télécharger le fichier' })]);
+    // Mémorisé au moment où le fichier part : réexporter mettra les événements
+    // à jour au lieu de les dupliquer.
+    lien.addEventListener('click', async function () {
+      fermerModale();
+      D.reglages.calendrierExporte = plan.exportes;
+      await sauvegarder();
+    });
+    actions.push(lien);
+    setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
   }
 
   if (plan.retires) {
-    corps.push(el('p', { class: 'tpt', style: 'margin:.5rem 0 0;color:var(--danger)',
-      text: plan.retires + ' repas retiré' + (plan.retires > 1 ? 's' : '') +
-        ' depuis le dernier fichier envoyé. Ceux-là sont déjà dans votre calendrier et ' +
-        'n\'en partiront pas seuls : supprimez-les à la main.' }));
+    corps.push(el('p', { class: 'tpt', style: 'margin:0 0 .6rem;color:var(--danger)',
+      text: plan.retires + ' repas retiré' + (plan.retires > 1 ? 's' : '') + ' depuis le dernier fichier envoyé.' }));
   }
+  corps.push(el('div', { class: 'menu-actions' }, actions));
 
   ouvrirModale({
     titre: 'Ajouter au calendrier',
     corps: corps,
     actions: [{ label: 'Fermer', onClick: function (f) { f(); } }],
   });
-  setTimeout(function () { URL.revokeObjectURL(url); }, 120000);
 }
 
 /** « 1 heure », « 30 minutes »… pour dire le rappel dans une phrase. */
@@ -5709,7 +5755,7 @@ async function appliquerCollage(rangs, portionsCollage) {
   if (creees) detail.push(creees + (creees > 1 ? ' ingrédients créés' : ' ingrédient créé'));
   if (ajustees) detail.push(ajustees + ' unité' + (ajustees > 1 ? 's' : '') + ' ajustée' + (ajustees > 1 ? 's' : ''));
   toast(detail.join(' · '), {
-    duree: 5000, actionLabel: 'Annuler',
+    duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
     onAction: async function () {
       r.lignes = lignesAvant.length ? lignesAvant : [ligneVide()];
       D.ingredients = D.ingredients.filter(function (i) { return idsAvant.has(i.id); });
@@ -5864,7 +5910,11 @@ async function supprimerRecette(recette, depuisEditeur) {
    ------------------------------------------------------------------------- */
 
 const SOUS_VUES_PLUS = [
-  { cle: 'reglages', icone: 'reglages', titre: 'Réglages & référentiel',
+  { cle: 'reglages', icone: 'reglages', titre: 'Réglages',
+    resume: function () { return 'Affichage, calendrier, rayons'; } },
+  // À part : la liste des ingrédients grandit sans fin, les réglages non.
+  // Les garder ensemble obligeait à défiler sous un mur pour changer un thème.
+  { cle: 'ingredients', icone: 'panier', titre: 'Ingrédients',
     resume: function () { return D.ingredients.length + ' ingrédients'; } },
   { cle: 'sync', icone: 'lien', titre: 'Partage & synchronisation',
     resume: function () { return infosEspaces.courant ? infosEspaces.courant.nom : 'Cet appareil seulement'; } },
@@ -5912,10 +5962,14 @@ function vuePlus() {
   }));
 
   if (sous.cle === 'reglages') {
+    v.appendChild(sectionProfil());
     v.appendChild(sectionAffichage());
     v.appendChild(sectionCalendrier());
-    sectionReferentiel(v);
     v.appendChild(sectionOrdreRayons());
+  } else if (sous.cle === 'ingredients') {
+    // Sa propre page : la replier n'aurait aucun sens, il n'y a rien d'autre.
+    etat.refOuvert = true;
+    sectionReferentiel(v);
   } else if (sous.cle === 'sync') {
     v.appendChild(carteSynchronisation());
   } else if (sous.cle === 'historique') {
@@ -6347,7 +6401,7 @@ async function purgerIngredientsInutilises() {
   await sauvegarder();
   rendre();
   toast(cibles.length + ' ingrédient' + (cibles.length > 1 ? 's supprimés' : ' supprimé'), {
-    duree: 5000, actionLabel: 'Annuler',
+    duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
     onAction: async function () { D.ingredients = avant; await sauvegarder(); rendre(); },
   });
 }
@@ -6779,7 +6833,7 @@ function panneauDuJour(corps, iso) {
       if (orphelin) {
         const idOrphelin = orphelin.id;
         await daterEntree(idOrphelin, iso);
-        toast('« ' + r.nom + ' » déplacé ici.', { duree: 5000, actionLabel: 'Annuler',
+        toast('« ' + r.nom + ' » déplacé ici.', { duree: TOAST_ANNULATION_MS, actionLabel: 'Annuler',
           onAction: async function () { await daterEntree(idOrphelin, null); dessinerCalendrier(corps); } });
       } else {
         await ajouterASemaine(r, iso);
@@ -6980,6 +7034,7 @@ async function traiterLienEntrant() {
   appliquerTheme();
   allerA('semaine');
   toast('Espace rejoint.');
+  sePresenter();
   return true;
 }
 
@@ -7020,6 +7075,17 @@ function carteSynchronisation() {
         (infosEspaces.enAttente ? ' (' + infosEspaces.enAttente + ' modification' + (infosEspaces.enAttente > 1 ? 's' : '') + ' en attente)' : '')
       : 'Les données restent sur cet appareil. Rien n\'est envoyé nulle part.' }),
   ]));
+
+  // Qui d'autre est dans l'espace. Un prénom se lit ; « ap_k3f7m2qx », non.
+  if (courant && D.membres.length) {
+    const moi = Store.identifiantAppareil();
+    carte.appendChild(el('p', { class: 'tpt doux', style: 'margin:.1rem 0 .5rem' }, [
+      el('span', { text: (D.membres.length > 1 ? 'Membres : ' : 'Membre : ') +
+        D.membres.map(function (m) {
+          return (m.prenom || 'Sans prénom') + (m.id === moi ? ' (vous)' : '');
+        }).join(', ') }),
+    ]));
+  }
 
   // Le serveur a perdu ses données — un redéploiement sans disque persistant,
   // le plus souvent. Cet appareil, lui, a toujours tout : on peut le remonter
@@ -7082,6 +7148,92 @@ function carteSynchronisation() {
   return carte;
 }
 
+/* ——— PROFIL ————————————————————————————————————————————————————————————————
+   Le prénom appartient à l'appareil : c'est la personne qui le tient. Il est
+   ensuite déclaré dans l'espace partagé, pour que l'autre voie « Camille » et
+   non un identifiant. On le demande au moment où il sert — en créant ou en
+   rejoignant un espace — et jamais avant : une liste de courses pour soi seul
+   n'a que faire d'un prénom.
+   ------------------------------------------------------------------------- */
+
+/**
+ * Se présenter dans l'espace, sans rien retarder : on demande le prénom une
+ * fois l'espace rejoint, et la réponse — ou son absence — n'empêche rien.
+ */
+function sePresenter() {
+  assurerPrenom('Les autres membres de l\'espace verront ce prénom.')
+    .then(function (ok) { if (ok) return declarerMembre(); })
+    .then(function (change) { if (change) rendre(); })
+    .catch(function () { /* renoncer n'est pas une panne */ });
+}
+
+/** Inscrit ou met à jour cet appareil dans la liste des membres de l'espace. */
+async function declarerMembre() {
+  if (!infosEspaces.courant || !RA.prenom) return false;
+  const id = Store.identifiantAppareil();
+  const moi = D.membres.find(function (m) { return m.id === id; });
+  const jour = aujourdHuiISO();
+  if (moi && moi.prenom === RA.prenom && moi.vuLe === jour) return false;
+  if (moi) { moi.prenom = RA.prenom; moi.vuLe = jour; }
+  else D.membres.push({ id: id, prenom: RA.prenom, vuLe: jour });
+  await sauvegarder();
+  return true;
+}
+
+/**
+ * S'assure qu'un prénom est connu, en le demandant si besoin.
+ * → true si l'on peut continuer, false si la personne a renoncé.
+ */
+function assurerPrenom(raison) {
+  if (RA.prenom) return Promise.resolve(true);
+  return new Promise(function (resoudre) {
+    const champ = el('input', {
+      type: 'text', value: '', placeholder: 'Camille',
+      autocomplete: 'given-name', 'aria-label': 'Prénom',
+    });
+    ouvrirModale({
+      titre: 'Votre prénom',
+      corps: [
+        el('p', { class: 'tpt doux', style: 'margin:0 0 .6rem', text: raison }),
+        el('label', { class: 'champ' }, [el('span', { text: 'Prénom' }), champ]),
+      ],
+      actions: [
+        { label: 'Plus tard', onClick: function (f) { f(); resoudre(false); } },
+        {
+          label: 'Continuer', variant: 'principal',
+          onClick: function (f) {
+            const nom = champ.value.trim().slice(0, 40);
+            if (!nom) { champ.focus(); return; }
+            reglerAppareil('prenom', nom);
+            f(); resoudre(true);
+          },
+        },
+      ],
+    });
+    setTimeout(function () { champ.focus(); }, 0);
+  });
+}
+
+/** Carte « Profil » des réglages : le prénom, changeable à tout moment. */
+function sectionProfil() {
+  const champ = el('input', {
+    type: 'text', value: RA.prenom || '', placeholder: 'Camille',
+    autocomplete: 'given-name', 'aria-label': 'Prénom',
+  });
+  champ.addEventListener('change', async function () {
+    reglerAppareil('prenom', champ.value.trim().slice(0, 40));
+    champ.value = RA.prenom || '';
+    await declarerMembre();
+    rendre();
+  });
+  return el('div', { class: 'carte' }, [
+    el('h2', { text: 'Profil' }),
+    el('p', { class: 'tpt doux', style: 'margin:-.2rem 0 .6rem',
+      text: 'Ce prénom vous identifie auprès des autres membres d\'un espace partagé.' }),
+    el('label', { class: 'champ' }, [el('span', { text: 'Prénom' }), champ]),
+  ]);
+}
+
 function creerEspacePartage() {
   const serveur = (D.reglages.serveurSync || '').trim();
   if (!serveur) { toast('Renseignez d\'abord l\'adresse du serveur.'); return; }
@@ -7104,6 +7256,7 @@ function creerEspacePartage() {
           await rafraichirEtatEspaces();
           rendre();
           montrerLienPartage();
+          sePresenter();
         },
       },
     ],
@@ -7132,6 +7285,7 @@ function rejoindreParLien() {
           appliquerTheme();
           allerA('semaine');
           toast('Espace rejoint.');
+          sePresenter();
         },
       },
     ],
@@ -7323,6 +7477,8 @@ async function demarrer() {
 
   allerA('semaine');
   ecranLancement.pret();   // l'application est dessinée : l'écran peut s'effacer
+
+  declarerMembre();
 
   // Un lien de partage dans l'adresse : on propose de rejoindre l'espace.
   await traiterLienEntrant();

@@ -317,6 +317,7 @@ async function espace(requete, magasin, id, surOperations) {
 const COLLECTIONS_CLEF = {
   'ingredients': 'id', 'recettes': 'id', 'semainesTypes': 'id',
   'semaine.selection': 'id', 'semaine.ajoutsManuels': 'id',
+  'membres': 'id',
 };
 function clefCollection(chemin) { return COLLECTIONS_CLEF[chemin.join('.')] || null; }
 
