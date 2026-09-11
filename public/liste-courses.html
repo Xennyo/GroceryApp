@@ -1018,15 +1018,12 @@ function donneesVides() {
     },
     historique: [],
     semainesTypes: [],
+    // L'apparence et les rappels n'y figurent pas : ils décrivent un appareil,
+    // pas une liste de courses. Voir REGLAGES_APPAREIL_DEFAUT.
     reglages: {
       ordreRayons: ORDRE_RAYONS_DEFAUT.slice(),
-      afficherPrix: true,
-      theme: 'auto',
-      policeTitres: 'livre',
       portionsBase: 4,
       serveurSync: '',
-      heureRepas: '19:30',
-      rappelMinutes: 60,
       // Adresse d'abonnement du calendrier. Partagée avec l'espace : chaque
       // appareil peut s'abonner sans qu'on la recrée.
       abonnementCalendrier: '',
@@ -1036,6 +1033,65 @@ function donneesVides() {
       calendrierExporte: {},
     },
   };
+}
+
+/* ——— RÉGLAGES DE L'APPAREIL ————————————————————————————————————————————————
+   Ce que chacun règle pour lui : l'apparence, et l'heure à laquelle son
+   téléphone lui rappelle de cuisiner. Partager une liste de courses ne veut
+   pas dire partager son thème sombre.
+
+   Ils vivent dans Store, hors du document synchronisé, et ne partent donc
+   jamais sur le réseau.
+   ------------------------------------------------------------------------- */
+const REGLAGES_APPAREIL_DEFAUT = {
+  theme: 'auto',
+  policeTitres: 'livre',
+  afficherPrix: true,
+  heureRepas: '19:30',
+  rappelMinutes: 60,
+  ecranLancement: true,
+};
+
+/** Les réglages de cet appareil. Remplis au démarrage, jamais synchronisés. */
+let RA = Object.assign({}, REGLAGES_APPAREIL_DEFAUT);
+
+/** Les réglages qui changent le contenu du calendrier déposé. */
+const REGLAGES_DU_CALENDRIER = ['heureRepas', 'rappelMinutes'];
+
+/**
+ * Écrit un réglage d'appareil. L'équivalent local de sauvegarder() — et, comme
+ * lui, il redépose le calendrier abonné quand ce qui change le concerne :
+ * déplacer l'heure du dîner doit déplacer le rappel, pas seulement le prochain.
+ */
+function reglerAppareil(nom, valeur) {
+  RA = normaliserReglagesAppareil(Store.reglerAppareil(nom, valeur));
+  if (REGLAGES_DU_CALENDRIER.indexOf(nom) >= 0) publierCalendrierSiBesoin();
+}
+
+function normaliserReglagesAppareil(r) {
+  const g = (r && typeof r === 'object') ? r : {};
+  return {
+    theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
+    policeTitres: g.policeTitres === 'systeme' ? 'systeme' : 'livre',
+    afficherPrix: g.afficherPrix !== false,
+    heureRepas: /^([01]\d|2[0-3]):[0-5]\d$/.test(g.heureRepas) ? g.heureRepas : '19:30',
+    rappelMinutes: (typeof g.rappelMinutes === 'number' && g.rappelMinutes >= 0)
+      ? Math.min(1440, Math.round(g.rappelMinutes)) : 60,
+    ecranLancement: g.ecranLancement !== false,
+  };
+}
+
+/**
+ * Retire du document les réglages devenus propres à l'appareil. Appelé une
+ * fois, après que cet appareil en a pris copie : ce qui reste dans l'espace
+ * ne décrit plus que la liste.
+ */
+function oublierReglagesDAppareil(d) {
+  let change = false;
+  Object.keys(REGLAGES_APPAREIL_DEFAUT).forEach(function (nom) {
+    if (d.reglages[nom] !== undefined) { delete d.reglages[nom]; change = true; }
+  });
+  return change;
 }
 
 const MOIS = ['janvier','février','mars','avril','mai','juin','juillet','août','septembre','octobre','novembre','décembre'];
@@ -1221,16 +1277,21 @@ function normaliserRacine(d) {
   ordre = ordre.concat(RAYONS_IDS.filter(function (r) { return ordre.indexOf(r) < 0; }));
   out.reglages = {
     ordreRayons: ordre,
-    afficherPrix: g.afficherPrix !== false,
-    theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
-    policeTitres: g.policeTitres === 'systeme' ? 'systeme' : 'livre',
     portionsBase: (typeof g.portionsBase === 'number' && g.portionsBase > 0) ? Math.min(99, Math.round(g.portionsBase)) : 4,
     serveurSync: (typeof g.serveurSync === 'string') ? g.serveurSync.replace(/\/+$/, '') : '',
-    heureRepas: /^([01]\d|2[0-3]):[0-5]\d$/.test(g.heureRepas) ? g.heureRepas : '19:30',
     abonnementCalendrier: (typeof g.abonnementCalendrier === 'string' &&
       /^https?:\/\//.test(g.abonnementCalendrier)) ? g.abonnementCalendrier : '',
-    rappelMinutes: (typeof g.rappelMinutes === 'number' && g.rappelMinutes >= 0)
-      ? Math.min(1440, Math.round(g.rappelMinutes)) : 60,
+    // Réglages d'un document d'avant la séparation : on les laisse passer tels
+    // quels, le temps que l'appareil en prenne copie au démarrage. C'est
+    // oublierReglagesDAppareil() qui les retire ensuite — les effacer ici les
+    // supprimerait avant que quiconque ait pu les lire.
+    ...(function () {
+      const repris = {};
+      Object.keys(REGLAGES_APPAREIL_DEFAUT).forEach(function (nom) {
+        if (g[nom] !== undefined) repris[nom] = g[nom];
+      });
+      return repris;
+    })(),
     calendrierExporte: (g.calendrierExporte && typeof g.calendrierExporte === 'object' && !Array.isArray(g.calendrierExporte))
       ? Object.keys(g.calendrierExporte).reduce(function (acc, k) {
           const n = g.calendrierExporte[k];
@@ -1315,7 +1376,8 @@ const Store = (function () {
   const CLE_LOCALE = 'listeCourses.v1';          // document hors espace (V1, inchangé)
   const CLE_REGISTRE = 'listeCourses.espaces';   // liste des espaces connus de cet appareil
   const PREFIXE_ESPACE = 'listeCourses.espace.'; // cache local d'un espace synchronisé
-  const CLE_LANCEMENT = 'listeCourses.ecranLancement'; // propre à l'appareil : voir plus bas
+  const CLE_APPAREIL = 'listeCourses.appareil';        // réglages propres à cet appareil
+  const CLE_LANCEMENT = 'listeCourses.ecranLancement'; // ancienne clé, reprise une fois
   const DEBOUNCE_MS = 400;
   const SONDAGE_MS = 5000;
 
@@ -1351,6 +1413,32 @@ const Store = (function () {
   }
 
   const copie = function (o) { return o === null || o === undefined ? o : JSON.parse(JSON.stringify(o)); };
+
+  /* --- Réglages propres à l'appareil ---------------------------------------
+     Ils décrivent comment CE téléphone présente la liste — son thème, sa
+     police, l'heure à laquelle il rappelle les repas — et non la liste
+     elle-même. Ils n'ont donc rien à faire dans le document partagé : deux
+     personnes qui partagent des courses ne partagent pas leurs yeux.
+
+     Lus de façon synchrone : l'écran de lancement doit être décidé avant même
+     que le document ne soit chargé.
+     --------------------------------------------------------------------- */
+  let appareil = null;   // lu une fois, gardé en mémoire
+
+  function lireAppareil() {
+    if (appareil) return appareil;
+    let r = null;
+    try { const t = lireBrut(CLE_APPAREIL); r = t ? JSON.parse(t) : null; }
+    catch (e) { r = null; }
+    appareil = (r && typeof r === 'object' && !Array.isArray(r)) ? r : {};
+    // L'écran de lancement avait sa propre clé avant que ce magasin n'existe.
+    if (appareil.ecranLancement === undefined && lireBrut(CLE_LANCEMENT) === 'non') {
+      appareil.ecranLancement = false;
+      ecrireAppareil();
+    }
+    return appareil;
+  }
+  function ecrireAppareil() { ecrireBrut(CLE_APPAREIL, JSON.stringify(appareil)); }
 
   /* --- Registre des espaces (local à l'appareil, jamais synchronisé) --- */
   function lireRegistre() {
@@ -1507,18 +1595,35 @@ const Store = (function () {
   }
 
   return {
-    /**
-     * L'écran de lancement doit être gardé ou retiré AVANT la première image,
-     * donc avant que load() n'ait eu le temps de rendre la main. C'est la seule
-     * préférence lue de façon synchrone, et la seule qui reste propre à
-     * l'appareil : elle décrit l'ouverture de l'application ici, pas le
-     * document partagé.
-     */
-    ecranLancementActif() { return lireBrut(CLE_LANCEMENT) !== 'non'; },
-    reglerEcranLancement(actif) {
-      if (actif) effacerBrut(CLE_LANCEMENT);
-      else ecrireBrut(CLE_LANCEMENT, 'non');
+    /** → tous les réglages de cet appareil. */
+    reglagesAppareil() { return copie(lireAppareil()); },
+
+    /** Enregistre un réglage de cet appareil. Rien n'est envoyé à l'espace. */
+    reglerAppareil(nom, valeur) {
+      const r = lireAppareil();
+      r[nom] = valeur;
+      ecrireAppareil();
+      return copie(r);
     },
+
+    /**
+     * Donne une valeur aux réglages que cet appareil ne connaît pas encore.
+     * Sert une fois, à la mise à jour : on reprend ce que le document portait,
+     * pour que l'apparence ne change pas sous les yeux de qui met à jour.
+     * Les réglages déjà connus ne sont jamais écrasés.
+     */
+    adopterReglagesAppareil(valeurs) {
+      const r = lireAppareil();
+      let change = false;
+      Object.keys(valeurs || {}).forEach(function (nom) {
+        if (r[nom] === undefined && valeurs[nom] !== undefined) { r[nom] = valeurs[nom]; change = true; }
+      });
+      if (change) ecrireAppareil();
+      return copie(r);
+    },
+
+    /** Lu avant le premier affichage, donc avant que load() ne rende la main. */
+    ecranLancementActif() { return lireAppareil().ecranLancement !== false; },
 
     /** → l'objet racine complet, ou null si rien n'a encore été stocké. */
     async load() {
@@ -2005,7 +2110,13 @@ const UID_CALENDRIER = '@liste-courses';
 function planEnIcs(donnees, options) {
   const o = options || {};
   const heure = heureValide(o.heure || donnees.reglages.heureRepas, '19:30');
-  const rappel = (typeof o.rappel === 'number' ? o.rappel : donnees.reglages.rappelMinutes) | 0;
+  // Le rappel appartient désormais à l'appareil : l'appelant le fournit. Le
+  // repli sur le document ne sert plus qu'aux plans d'avant la séparation, et
+  // le défaut d'une heure évite qu'un document sans réglage n'émette un
+  // calendrier muet.
+  const rappelBrut = (typeof o.rappel === 'number') ? o.rappel
+    : (typeof donnees.reglages.rappelMinutes === 'number' ? donnees.reglages.rappelMinutes : 60);
+  const rappel = rappelBrut | 0;
   const dejaExportes = o.exportes || donnees.reglages.calendrierExporte || {};
   const parRec = indexRecettes(donnees);
   const parIng = indexIngredients(donnees);
@@ -3184,7 +3295,7 @@ function publierCalendrierSiBesoin() {
   if (!D || !D.reglages.abonnementCalendrier) return;
   // Sans jour, aucun repas ne part : ce n'est pas une raison de vider
   // l'abonnement, mais c'est bien ce que le plan dit, donc on le dépose.
-  const plan = planEnIcs(D, { exportes: {} });
+  const plan = planEnIcs(D, { exportes: {}, heure: RA.heureRepas, rappel: RA.rappelMinutes });
   // L'horodatage change à chaque génération : on compare le reste.
   const empreinte = plan.texte.replace(/DTSTAMP:[^\r\n]*/g, '');
   if (empreinte === empreinteCalendrierPublie) return;
@@ -3203,14 +3314,14 @@ async function sauvegarder() {
 }
 
 function appliquerTheme() {
-  const t = (D && D.reglages && D.reglages.theme) || 'auto';
+  const t = RA.theme || 'auto';
   if (t === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
-  const pol = (D && D.reglages && D.reglages.policeTitres) || 'livre';
+  const pol = RA.policeTitres || 'livre';
   document.documentElement.setAttribute('data-police', pol);
 }
 
-function afficherPrix() { return !!(D && D.reglages.afficherPrix); }
+function afficherPrix() { return RA.afficherPrix !== false; }
 
 function ingredientParId(id) {
   for (let i = 0; i < D.ingredients.length; i++) if (D.ingredients[i].id === id) return D.ingredients[i];
@@ -4563,7 +4674,7 @@ function listeEnTexte() {
  * lui, arrive dans Fichiers, et l'ouvrir propose « Ajouter tous à Calendrier ».
  */
 async function ajouterAuCalendrier() {
-  const plan = planEnIcs(D, {});
+  const plan = planEnIcs(D, { heure: RA.heureRepas, rappel: RA.rappelMinutes });
   if (!plan.nb && !plan.retires) {
     toast('Aucun repas daté dans la période — donnez-leur un jour d\'abord.');
     return;
@@ -4572,7 +4683,7 @@ async function ajouterAuCalendrier() {
   const url = URL.createObjectURL(new Blob([plan.texte], { type: 'text/calendar;charset=utf-8' }));
 
   const resume = plan.nb + ' repas' +
-    (D.reglages.rappelMinutes ? ' · rappel ' + libelleRappel(D.reglages.rappelMinutes) : '');
+    (RA.rappelMinutes ? ' · rappel ' + libelleRappel(RA.rappelMinutes) : '');
 
   const lien = el('a', {
     href: url, download: nomFichier, class: 'btn principal', style: 'text-decoration:none',
@@ -5856,33 +5967,36 @@ function sectionOrdreRayons() {
   return carteOrdre;
 }
 
+/**
+ * Tout ce que cette carte règle appartient à l'appareil : rien n'est envoyé à
+ * l'espace, et l'autre téléphone garde son propre thème.
+ */
 function sectionAffichage() {
-  const casePrix = el('input', { type: 'checkbox', checked: D.reglages.afficherPrix });
-  casePrix.addEventListener('change', async function () { D.reglages.afficherPrix = casePrix.checked; await sauvegarder(); rendre(); });
+  const casePrix = el('input', { type: 'checkbox', checked: RA.afficherPrix });
+  casePrix.addEventListener('change', function () { reglerAppareil('afficherPrix', casePrix.checked); rendre(); });
   const selTheme = el('select', { style: 'max-width:200px' });
   [['auto', 'Auto (système)'], ['clair', 'Clair'], ['sombre', 'Sombre']].forEach(function (t) {
-    selTheme.appendChild(el('option', { value: t[0], text: t[1], selected: D.reglages.theme === t[0] }));
+    selTheme.appendChild(el('option', { value: t[0], text: t[1], selected: RA.theme === t[0] }));
   });
-  selTheme.addEventListener('change', async function () { D.reglages.theme = selTheme.value; await sauvegarder(); appliquerTheme(); });
+  selTheme.addEventListener('change', function () { reglerAppareil('theme', selTheme.value); appliquerTheme(); });
   const selPolice = el('select', { style: 'max-width:200px' });
   [['livre', 'Livre (serif)'], ['systeme', 'Système']].forEach(function (t) {
-    selPolice.appendChild(el('option', { value: t[0], text: t[1], selected: D.reglages.policeTitres === t[0] }));
+    selPolice.appendChild(el('option', { value: t[0], text: t[1], selected: RA.policeTitres === t[0] }));
   });
-  selPolice.addEventListener('change', async function () {
-    D.reglages.policeTitres = selPolice.value;
-    await sauvegarder();
+  selPolice.addEventListener('change', function () {
+    reglerAppareil('policeTitres', selPolice.value);
     appliquerTheme();
   });
 
-  // Pas dans D.reglages : la décision doit être prise avant que le document ne
-  // soit lu. Elle vaut donc pour cet appareil, et pas pour l'espace partagé.
-  const caseLancement = el('input', { type: 'checkbox', checked: Store.ecranLancementActif() });
+  const caseLancement = el('input', { type: 'checkbox', checked: RA.ecranLancement !== false });
   caseLancement.addEventListener('change', function () {
-    Store.reglerEcranLancement(caseLancement.checked);
+    reglerAppareil('ecranLancement', caseLancement.checked);
   });
 
   return el('div', { class: 'carte' }, [
     el('h2', { text: 'Affichage' }),
+    el('p', { class: 'tpt doux', style: 'margin:-.2rem 0 .6rem',
+      text: 'Ces réglages ne valent que pour cet appareil. Les autres gardent les leurs.' }),
     el('label', { class: 'inline-case' }, [casePrix, el('span', { text: 'Afficher les prix' })]),
     el('div', { class: 'ligne-champs', style: 'margin-top:.5rem' }, [
       el('label', { class: 'champ' }, [el('span', { text: 'Thème' }), selTheme]),
@@ -5891,7 +6005,6 @@ function sectionAffichage() {
     el('label', { class: 'inline-case', style: 'margin-top:.6rem' }, [
       caseLancement,
       el('span', { text: 'Écran de lancement' }),
-      el('span', { class: 'tpt doux', text: 'sur cet appareil' }),
     ]),
   ]);
 }
@@ -5939,7 +6052,7 @@ function blocAbonnement() {
 
 async function creerAbonnementCalendrier() {
   try {
-    const plan = planEnIcs(D, { exportes: {} });
+    const plan = planEnIcs(D, { exportes: {}, heure: RA.heureRepas, rappel: RA.rappelMinutes });
     const r = await Store.creerAbonnementCalendrier(plan.texte);
     D.reglages.abonnementCalendrier = r.url;
     empreinteCalendrierPublie = plan.texte.replace(/DTSTAMP:[^\r\n]*/g, '');
@@ -5986,23 +6099,25 @@ async function copierTexte(texte, message) {
   setTimeout(function () { champ.select(); }, 0);
 }
 
-/** Ce que le calendrier du téléphone doit savoir : quand, et combien avant. */
+/**
+ * Ce que le calendrier du téléphone doit savoir : quand, et combien avant.
+ * Propre à l'appareil, comme le rappel qu'il déclenche — chacun peut vouloir
+ * être prévenu à un moment différent.
+ */
 function sectionCalendrier() {
-  const champHeure = el('input', { type: 'time', value: D.reglages.heureRepas, style: 'max-width:150px',
+  const champHeure = el('input', { type: 'time', value: RA.heureRepas, style: 'max-width:150px',
     'aria-label': 'Heure des repas' });
-  champHeure.addEventListener('change', async function () {
-    D.reglages.heureRepas = heureValide(champHeure.value, D.reglages.heureRepas);
-    champHeure.value = D.reglages.heureRepas;
-    await sauvegarder();
+  champHeure.addEventListener('change', function () {
+    reglerAppareil('heureRepas', heureValide(champHeure.value, RA.heureRepas));
+    champHeure.value = RA.heureRepas;
   });
   const champRappel = el('select', { style: 'max-width:190px', 'aria-label': 'Rappel avant le repas' });
   [[0, 'Aucun rappel'], [15, '15 minutes avant'], [30, '30 minutes avant'],
    [60, '1 heure avant'], [120, '2 heures avant'], [180, '3 heures avant']].forEach(function (r) {
-    champRappel.appendChild(el('option', { value: r[0], text: r[1], selected: D.reglages.rappelMinutes === r[0] }));
+    champRappel.appendChild(el('option', { value: r[0], text: r[1], selected: RA.rappelMinutes === r[0] }));
   });
-  champRappel.addEventListener('change', async function () {
-    D.reglages.rappelMinutes = Number(champRappel.value) || 0;
-    await sauvegarder();
+  champRappel.addEventListener('change', function () {
+    reglerAppareil('rappelMinutes', Number(champRappel.value) || 0);
   });
 
   const carte = el('div', { class: 'carte' }, [
@@ -7047,6 +7162,20 @@ async function demarrer() {
   }
   if (Store.modeMemoire()) signalerModeDegrade();
 
+  // L'apparence et les rappels ont longtemps vécu dans le document partagé, où
+  // ils n'avaient rien à faire : changer de thème changeait celui de l'autre.
+  // À la première ouverture après la mise à jour, cet appareil reprend les
+  // valeurs qu'il y trouve — pour que rien ne change sous ses yeux — puis on
+  // les retire de l'espace, qui ne décrit plus que la liste.
+  RA = normaliserReglagesAppareil(Store.adopterReglagesAppareil({
+    theme: D.reglages.theme,
+    policeTitres: D.reglages.policeTitres,
+    afficherPrix: D.reglages.afficherPrix,
+    heureRepas: D.reglages.heureRepas,
+    rappelMinutes: D.reglages.rappelMinutes,
+  }));
+  if (oublierReglagesDAppareil(D)) await sauvegarder();
+
   appliquerTheme();
   $$('#tabbar button').forEach(function (b) {
     b.addEventListener('click', function () { allerA(b.dataset.tab); });
@@ -7118,7 +7247,7 @@ async function demarrer() {
   // Le thème « auto » suit le système en direct.
   if (window.matchMedia) {
     const mq = window.matchMedia('(prefers-color-scheme: dark)');
-    const surChangement = function () { if (D && D.reglages.theme === 'auto') appliquerTheme(); };
+    const surChangement = function () { if (RA.theme === 'auto') appliquerTheme(); };
     if (mq.addEventListener) mq.addEventListener('change', surChangement);
     else if (mq.addListener) mq.addListener(surChangement);
   }
