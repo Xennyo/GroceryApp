@@ -45,6 +45,14 @@ fs.mkdirSync(DONNEES, { recursive: true });
 
 const fichierEspace = function (id) { return path.join(DONNEES, id + '.json'); };
 
+// Les invitations vivent à part : elles ne durent qu'un quart d'heure, et se
+// retrouvent par l'empreinte du code, pas par l'espace auquel elles mènent.
+const DOSSIER_INVITATIONS = path.join(DONNEES, 'invitations');
+fs.mkdirSync(DOSSIER_INVITATIONS, { recursive: true });
+const fichierInvitation = function (clef) {
+  return path.join(DOSSIER_INVITATIONS, String(clef).replace(/[^a-f0-9]/g, '').slice(0, 64) + '.json');
+};
+
 const magasin = {
   async lire(id) {
     try { return JSON.parse(fs.readFileSync(fichierEspace(id), 'utf8')); }
@@ -55,7 +63,35 @@ const magasin = {
     fs.writeFileSync(tmp, JSON.stringify(espace));
     fs.renameSync(tmp, fichierEspace(id));   // remplacement atomique
   },
+  async lireInvitation(clef) {
+    try { return JSON.parse(fs.readFileSync(fichierInvitation(clef), 'utf8')); }
+    catch (e) { return null; }
+  },
+  async ecrireInvitation(clef, inv) {
+    const cible = fichierInvitation(clef);
+    fs.writeFileSync(cible + '.tmp', JSON.stringify(inv));
+    fs.renameSync(cible + '.tmp', cible);
+    balayerInvitations();
+  },
+  async supprimerInvitation(clef) {
+    try { fs.unlinkSync(fichierInvitation(clef)); } catch (e) { /* déjà partie */ }
+  },
 };
+
+/** Les invitations périmées ne servent plus à rien : on les balaie au passage. */
+function balayerInvitations() {
+  let noms;
+  try { noms = fs.readdirSync(DOSSIER_INVITATIONS); } catch (e) { return; }
+  const maintenant = Date.now();
+  noms.forEach(function (n) {
+    if (!/\.json$/.test(n)) return;
+    const f = path.join(DOSSIER_INVITATIONS, n);
+    try {
+      const inv = JSON.parse(fs.readFileSync(f, 'utf8'));
+      if (!inv || !inv.expire || inv.expire < maintenant) fs.unlinkSync(f);
+    } catch (e) { try { fs.unlinkSync(f); } catch (e2) {} }
+  });
+}
 
 // Une file d'attente par espace : deux requêtes simultanées ne doivent pas
 // écraser mutuellement leur écriture. C'est ce que le Durable Object donne
@@ -124,6 +160,8 @@ function origineDe(req) {
 
 /** L'espace visé, pour savoir dans quelle file d'attente ranger la requête. */
 function espaceVise(chemin, corpsTexte) {
+  const mi = chemin.match(/^\/api\/invitations\/([^/]+)$/);
+  if (mi) return 'invitation:' + mi[1];
   const m = chemin.match(/^\/api\/espaces\/([^/]+)(?:\/|$)/);
   if (m) return m[1];
   if (chemin === '/api/espaces' && corpsTexte) {

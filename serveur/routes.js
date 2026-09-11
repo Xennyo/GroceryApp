@@ -79,6 +79,47 @@ function cleAleatoire() { return base64url(octetsAleatoires(24)); }
 
 function nbOctets(texte) { return encodeur.encode(texte).length; }
 
+/* ——— Invitations ————————————————————————————————————————————————————————
+   Un code de 8 caractères à la place d'un lien de 300. Il est court parce
+   qu'il est éphémère : usage unique, quinze minutes. Forcer 2^40 combinaisons
+   dans ce délai est hors de portée, là où un code permanent de cette taille
+   finirait par tomber.
+
+   L'alphabet écarte I, L, O et U — les quatre qui se confondent à l'oral ou à
+   l'écrit avec 1, 0 et V. À la lecture, on les rattrape quand même.
+
+   L'invitation porte la clé de l'espace en clair. C'est le compromis assumé :
+   le serveur ne connaît que l'empreinte de la clé, il ne peut donc pas la
+   redonner sans qu'on la lui confie. Elle ne vit que le temps de l'invitation,
+   et disparaît dès qu'elle a servi.
+   ------------------------------------------------------------------------- */
+
+const ALPHABET_CODE = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';   // ni I, ni L, ni O, ni U
+const CODE_LONGUEUR = 8;
+const INVITATION_MS = 15 * 60 * 1000;
+
+function codeInvitation() {
+  const t = octetsAleatoires(CODE_LONGUEUR);
+  let sortie = '';
+  // Le tirage est uniforme : 256 n'est pas un multiple de 32, mais 32 le
+  // divise — le reste est donc sans biais.
+  for (let i = 0; i < CODE_LONGUEUR; i++) sortie += ALPHABET_CODE[t[i] % 32];
+  return sortie;
+}
+
+/** « k3f7-m2qx », « K3F7 M2QX », « K3F7M2QX » désignent le même code. */
+function normaliserCode(brut) {
+  return String(brut || '').toUpperCase()
+    .replace(/[^0-9A-Z]/g, '')
+    .replace(/[IL]/g, '1').replace(/O/g, '0').replace(/U/g, 'V');
+}
+
+function codeValide(c) {
+  if (c.length !== CODE_LONGUEUR) return false;
+  for (let i = 0; i < c.length; i++) if (ALPHABET_CODE.indexOf(c[i]) < 0) return false;
+  return true;
+}
+
 /** Un calendrier plausible, et pas trop gros. On ne stocke rien d'autre. */
 function valideIcs(texte) {
   return typeof texte === 'string' &&
@@ -133,6 +174,12 @@ async function router(requete, magasin) {
 
   const mcal = chemin.match(/^\/api\/espaces\/([^/]+)\/calendrier(\.ics)?$/);
   if (mcal) return await calendrier(requete, magasin, mcal[1], !!mcal[2]);
+
+  const minv = chemin.match(/^\/api\/espaces\/([^/]+)\/invitations$/);
+  if (minv) return await creerInvitation(requete, magasin, minv[1]);
+
+  const muse = chemin.match(/^\/api\/invitations\/([^/]+)$/);
+  if (muse) return await utiliserInvitation(requete, magasin, muse[1]);
 
   const m = chemin.match(/^\/api\/espaces\/([^/]+)(\/operations)?$/);
   if (m) return await espace(requete, magasin, m[1], !!m[2]);
@@ -261,6 +308,43 @@ function adresseCalendrier(origine, id, jeton) {
     '/api/espaces/' + id + '/calendrier.ics?jeton=' + jeton;
 }
 
+/** Fabrique un code d'invitation pour un espace. Demande la clé de l'espace. */
+async function creerInvitation(requete, magasin, id) {
+  if (requete.methode !== 'POST') return json(405, { erreur: 'méthode non autorisée' });
+  if (!ID_VALIDE.test(id)) return json(400, { erreur: 'identifiant invalide' });
+  const espaceLu = await magasin.lire(id);
+  if (!espaceLu) return json(404, { erreur: 'espace introuvable' });
+  const cle = requete.cle;
+  if (!cle || !memeEmpreinte(await empreinte(cle), espaceLu.cleEmpreinte)) {
+    return json(401, { erreur: 'clé invalide' });
+  }
+  const code = codeInvitation();
+  const expire = Date.now() + INVITATION_MS;
+  // Rangée sous l'empreinte du code : un coup d'œil au stockage ne livre
+  // aucune invitation utilisable.
+  await magasin.ecrireInvitation(await empreinte(code), {
+    espaceId: id, cle: cle, nom: espaceLu.nom, expire: expire,
+  });
+  return json(200, { code: code, expire: new Date(expire).toISOString(), valableMs: INVITATION_MS });
+}
+
+/** Échange un code contre de quoi rejoindre l'espace. Le code meurt ici. */
+async function utiliserInvitation(requete, magasin, codeBrut) {
+  if (requete.methode !== 'POST') return json(405, { erreur: 'méthode non autorisée' });
+  const code = normaliserCode(codeBrut);
+  if (!codeValide(code)) return json(400, { erreur: 'code invalide' });
+  const clef = await empreinte(code);
+  const inv = await magasin.lireInvitation(clef);
+  // Même réponse pour un code inconnu et pour un code périmé : distinguer les
+  // deux dirait à qui essaie au hasard quand il est tombé juste.
+  if (!inv || !inv.expire || inv.expire < Date.now()) {
+    if (inv) await magasin.supprimerInvitation(clef);
+    return json(404, { erreur: 'code inconnu ou expiré' });
+  }
+  await magasin.supprimerInvitation(clef);
+  return json(200, { id: inv.espaceId, cle: inv.cle, nom: inv.nom });
+}
+
 /** Lecture et écriture du document d'un espace. */
 async function espace(requete, magasin, id, surOperations) {
   if (!ID_VALIDE.test(id)) return json(400, { erreur: 'identifiant invalide' });
@@ -378,6 +462,8 @@ function appliquerOperations(doc, operations) {
 
 const API = {
   ID_VALIDE: ID_VALIDE, TAILLE_MAX: TAILLE_MAX, JOURNAL_MAX: JOURNAL_MAX,
+  CODE_LONGUEUR: CODE_LONGUEUR, INVITATION_MS: INVITATION_MS,
+  codeInvitation: codeInvitation, normaliserCode: normaliserCode, codeValide: codeValide,
   empreinte: empreinte, identifiantEspace: identifiantEspace, cleAleatoire: cleAleatoire,
   valideIcs: valideIcs, adresseCalendrier: adresseCalendrier,
   appliquerOperations: appliquerOperations, traiter: traiter,

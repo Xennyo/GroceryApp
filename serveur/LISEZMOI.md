@@ -97,6 +97,35 @@ déjà envoyés fonctionnent à nouveau.
 
 Sauvegarde : copier le dossier `--donnees`. Rien d'autre n'est à conserver.
 
+## Invitation par code
+
+Rejoindre un espace demandait de faire passer un lien de trois cents
+caractères. Un code de huit suffit : `K3F7-M2QX`, dictable au téléphone.
+
+```
+POST /api/espaces/:id/invitations   (clé de l'espace en Bearer)  → { code, valableMs }
+POST /api/invitations/:code                                      → { id, cle, nom }
+```
+
+**La brièveté tient à la durée, pas à la longueur.** Le code vaut un quart
+d'heure et ne sert qu'une fois. Huit caractères dans un alphabet de 32 font
+1 100 milliards de combinaisons ; les épuiser en quinze minutes demanderait
+plus d'un milliard de requêtes par seconde. Un code permanent de cette taille,
+lui, finirait par tomber.
+
+L'alphabet écarte **I, L, O et U**, les quatre qui se confondent à l'oral avec
+1, 0 et V. À la lecture on les rattrape quand même, et les tirets, espaces et
+minuscules sont ignorés : `k3f7-m2qx` et `K3F7M2QX` désignent le même code.
+
+**Ce que le serveur retient.** L'invitation est rangée sous l'**empreinte** du
+code — lire le stockage ne livre aucun code utilisable — et contient la clé de
+l'espace en clair. C'est le compromis assumé : le serveur ne connaît que
+l'empreinte de la clé, il ne peut donc pas la redonner sans qu'on la lui
+confie. L'enregistrement disparaît dès qu'il a servi, ou à son expiration.
+
+Un code inconnu et un code périmé reçoivent la **même** réponse : distinguer
+les deux dirait à qui essaie au hasard quand il est tombé juste.
+
 ## Abonnement du calendrier
 
 Un calendrier abonné relit une adresse tout seul et **remplace** son contenu :

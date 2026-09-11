@@ -39,6 +39,12 @@ function cleFournie(request) {
 
 /** L'espace visé, qui désigne le Durable Object à saisir. */
 function espaceVise(chemin, corpsTexte) {
+  // Un code d'invitation ne désigne pas un espace : il a son propre objet,
+  // trouvé par l'empreinte du code. C'est routes.js qui fait l'empreinte, donc
+  // on route ici sur le code brut normalisé — l'objet réel est atteint depuis
+  // le magasin, par le nom « invitation:<empreinte> ».
+  const mi = chemin.match(/^\/api\/invitations\/([^/]+)$/);
+  if (mi) return 'code:' + mi[1].toUpperCase();
   const m = chemin.match(/^\/api\/espaces\/([^/]+)(?:\/|$)/);
   if (m) return m[1];
   if (chemin === '/api/espaces' && corpsTexte) {

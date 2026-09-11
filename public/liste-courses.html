@@ -777,6 +777,19 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
 }
 .fermer-toast:hover{ opacity:1; }
 
+/* Un code se lit à voix haute : gros, espacé, et en chasse fixe pour que
+   le 0 ne se confonde pas avec un O. */
+.code-invitation{
+  margin:.2rem 0 0; text-align:center;
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:2rem; font-weight:700; letter-spacing:.12em;
+  color:var(--accent);
+}
+.saisie-code{
+  font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+  font-size:1.25rem; letter-spacing:.1em; text-transform:uppercase;
+}
+
 /* En-tête de l'éditeur de recette : il reste au-dessus du contenu pendant
    qu'on fait défiler, pour que la sortie soit toujours à portée. */
 .entete-editeur{
@@ -1099,6 +1112,9 @@ const REGLAGES_DU_CALENDRIER = ['heureRepas', 'rappelMinutes'];
 function reglerAppareil(nom, valeur) {
   RA = normaliserReglagesAppareil(Store.reglerAppareil(nom, valeur));
   if (REGLAGES_DU_CALENDRIER.indexOf(nom) >= 0) publierCalendrierSiBesoin();
+  // Changer de prénom après coup doit se voir chez les autres, comme le
+  // changer avant. Sans ça, seul le tout premier réglage était publié.
+  if (nom === 'prenom' && typeof declarerMembre === 'function') declarerMembre();
 }
 
 function normaliserReglagesAppareil(r) {
@@ -1816,6 +1832,32 @@ const Store = (function () {
       demarrerSondage();
       signalerEtat('synchronise');
       return { id: e.id, nom: e.nom, lien: this.lienPartage(e) };
+    },
+
+    /**
+     * Fabrique un code d'invitation pour l'espace courant. Le serveur le tire
+     * et le retient un quart d'heure ; nous n'en gardons rien.
+     */
+    async creerInvitation() {
+      if (!espaceCourant) throw new Error('Aucun espace partagé ouvert.');
+      const rep = await fetch(urlEspace('/invitations'), { method: 'POST', headers: entetes() });
+      if (!rep.ok) throw new Error('Le serveur a refusé l\'invitation (' + rep.status + ').');
+      return await rep.json();
+    },
+
+    /** Échange un code contre un espace, puis le rejoint comme un lien. */
+    async rejoindreParCode(serveur, code) {
+      const s = String(serveur).replace(/\/+$/, '');
+      const rep = await fetch(s + '/api/invitations/' + encodeURIComponent(String(code).trim()), {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+      });
+      if (rep.status === 404) throw new Error('Ce code ne correspond à rien, ou il a expiré.');
+      if (rep.status === 400) throw new Error('Ce code n\'a pas la bonne forme.');
+      if (!rep.ok) throw new Error('Le serveur a refusé ce code (' + rep.status + ').');
+      const r = await rep.json();
+      // On repasse par le chemin du lien : une seule façon de rejoindre.
+      return await this.rejoindreEspace('espace=' + encodeURIComponent(r.id) +
+        '&cle=' + encodeURIComponent(r.cle) + '&serveur=' + encodeURIComponent(s));
     },
 
     /** Rejoint un espace existant à partir d'un lien de partage. */
@@ -7132,9 +7174,13 @@ function carteSynchronisation() {
     onclick: creerEspacePartage,
   }));
   actions.appendChild(el('button', {
-    type: 'button', class: 'btn', text: '⇥ Rejoindre avec un lien', onclick: rejoindreParLien,
+    type: 'button', class: 'btn', text: '⇥ Rejoindre avec un code', onclick: rejoindreParCode,
+  }));
+  actions.appendChild(el('button', {
+    type: 'button', class: 'btn', text: 'Rejoindre avec un lien', onclick: rejoindreParLien,
   }));
   if (courant) {
+    actions.appendChild(el('button', { type: 'button', class: 'btn principal', text: 'Inviter', onclick: inviterParCode }));
     actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Lien de partage', onclick: montrerLienPartage }));
     actions.appendChild(el('button', { type: 'button', class: 'btn', text: '↻ Synchroniser', onclick: async function () {
       await Store.synchroniser(); await rafraichirEtatEspaces(); rendre(); toast('Synchronisation demandée.');
@@ -7220,10 +7266,9 @@ function sectionProfil() {
     type: 'text', value: RA.prenom || '', placeholder: 'Camille',
     autocomplete: 'given-name', 'aria-label': 'Prénom',
   });
-  champ.addEventListener('change', async function () {
-    reglerAppareil('prenom', champ.value.trim().slice(0, 40));
+  champ.addEventListener('change', function () {
+    reglerAppareil('prenom', champ.value.trim().slice(0, 40));   // déclare aussi le membre
     champ.value = RA.prenom || '';
-    await declarerMembre();
     rendre();
   });
   return el('div', { class: 'carte' }, [
@@ -7261,6 +7306,99 @@ function creerEspacePartage() {
       },
     ],
   });
+}
+
+/* ——— INVITATION PAR CODE ————————————————————————————————————————————————
+   Huit caractères à dicter, plutôt qu'un lien de trois cents à faire passer.
+   Ils sont courts parce qu'ils ne vivent qu'un quart d'heure : c'est la durée,
+   et non la longueur, qui les met hors de portée de qui essaierait au hasard.
+   ------------------------------------------------------------------------- */
+
+/** Découpe en deux moitiés : « K3F7-M2QX » se lit et se dicte, « K3F7M2QX » non. */
+function codeLisible(code) {
+  const c = String(code || '');
+  return c.length === 8 ? c.slice(0, 4) + '-' + c.slice(4) : c;
+}
+
+async function inviterParCode() {
+  let r;
+  try { r = await Store.creerInvitation(); }
+  catch (e) { toast(e.message || 'Invitation impossible.'); return; }
+
+  const lisible = codeLisible(r.code);
+  const restant = el('p', { class: 'tpt doux', style: 'margin:.4rem 0 0', text: '' });
+  const fin = Date.now() + (r.valableMs || 0);
+  let minuteur = null;
+  const majRestant = function () {
+    const s = Math.max(0, Math.round((fin - Date.now()) / 1000));
+    restant.textContent = s > 0
+      ? 'Valable encore ' + Math.floor(s / 60) + ' min ' + String(s % 60).padStart(2, '0') + ' s, une seule fois.'
+      : 'Ce code a expiré. Refaites-en un.';
+    if (s <= 0 && minuteur) { clearInterval(minuteur); minuteur = null; }
+  };
+  majRestant();
+  minuteur = setInterval(majRestant, 1000);
+
+  ouvrirModale({
+    titre: 'Inviter avec un code',
+    corps: [
+      el('p', { class: 'code-invitation', text: lisible }),
+      el('p', { class: 'tpt doux', style: 'margin:.2rem 0 0',
+        text: 'À saisir dans Plus → Synchronisation → « Rejoindre avec un code ».' }),
+      restant,
+      el('div', { class: 'menu-actions', style: 'margin-top:.7rem' }, [
+        el('button', { type: 'button', class: 'btn', text: 'Copier le code',
+          onclick: function () { copierTexte(lisible, 'Code copié.'); } }),
+      ]),
+    ],
+    actions: [{ label: 'Fermer', onClick: function (f) { if (minuteur) clearInterval(minuteur); f(); } }],
+  });
+}
+
+function rejoindreParCode() {
+  const serveurConnu = (D.reglages.serveurSync || '').trim();
+  const champCode = el('input', {
+    type: 'text', placeholder: 'K3F7-M2QX', autocapitalize: 'characters',
+    autocomplete: 'off', spellcheck: 'false', class: 'saisie-code', 'aria-label': 'Code d\'invitation',
+  });
+  const champServeur = el('input', {
+    type: 'url', value: serveurConnu, placeholder: 'https://mon-serveur.exemple',
+    'aria-label': 'Adresse du serveur',
+  });
+  const corps = [el('label', { class: 'champ' }, [el('span', { text: 'Code reçu' }), champCode])];
+  // L'adresse n'est demandée que si l'appareil n'en connaît pas déjà une.
+  if (!serveurConnu) {
+    corps.push(el('label', { class: 'champ' }, [el('span', { text: 'Serveur' }), champServeur]));
+  }
+  corps.push(el('p', { class: 'pt doux',
+    text: 'Vos données locales ne sont pas touchées : elles restent sous « Cet appareil ».' }));
+
+  ouvrirModale({
+    titre: 'Rejoindre avec un code',
+    corps: corps,
+    actions: [
+      { label: 'Annuler', onClick: function (f) { f(); } },
+      {
+        label: 'Rejoindre', variant: 'principal',
+        onClick: async function (f) {
+          const code = champCode.value.trim();
+          const serveur = (serveurConnu || champServeur.value).trim();
+          if (!code) { champCode.focus(); return; }
+          if (!serveur) { champServeur.focus(); return; }
+          f();
+          try { D = await Store.rejoindreParCode(serveur, code); }
+          catch (e) { toast(e.message || 'Impossible de rejoindre cet espace.'); return; }
+          if (!D.reglages.serveurSync) { D.reglages.serveurSync = serveur.replace(/\/+$/, ''); await sauvegarder(); }
+          await rafraichirEtatEspaces();
+          appliquerTheme();
+          allerA('semaine');
+          toast('Espace rejoint.');
+          sePresenter();
+        },
+      },
+    ],
+  });
+  setTimeout(function () { champCode.focus(); }, 0);
 }
 
 function rejoindreParLien() {
