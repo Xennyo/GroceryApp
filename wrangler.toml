@@ -7,6 +7,13 @@
 # Les espaces sont stockés dans les Durable Objects, adossés à SQLite. Ils
 # survivent aux déploiements : il n'y a pas de disque à monter, et rien à
 # perdre au redémarrage.
+# ⚠ Trois valeurs ne doivent JAMAIS changer une fois déployé, sous peine de
+#   rendre tous les espaces existants inatteignables : « name » ci-dessous,
+#   « class_name » et le nom de liaison « ESPACE » plus bas. Le stockage des
+#   Durable Objects est rattaché à ce triplet. Renommer la classe se fait avec
+#   une migration « renamed_classes », jamais en éditant class_name seul, et
+#   « deleted_classes » efface définitivement les données.
+#   test-maj.js vérifie que ce triplet n'a pas bougé.
 name = "liste-courses"
 main = "worker/index.js"
 compatibility_date = "2026-01-01"
