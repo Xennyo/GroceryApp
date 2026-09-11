@@ -233,28 +233,55 @@ async function creer(requete, magasin) {
    reçoit ; répondre « 0 repas » à cause d'un espace perdu viderait le
    calendrier de l'abonné, alarmes comprises. Une erreur, elle, le fige.
    ---------------------------------------------------------------------- */
+/**
+ * Un abonnement PAR APPAREIL, et non par espace.
+ *
+ * L'heure des repas et le délai du rappel appartiennent à chaque téléphone.
+ * Avec un seul calendrier pour l'espace, le dernier qui déposait imposait ses
+ * horaires à tout le monde : ajouter une recette depuis un téléphone réglé sur
+ * 12 h 15 déplaçait les rappels de l'autre. Chacun a donc son fichier, sous
+ * son propre jeton, nourri par ses propres réglages.
+ *
+ * Le document garde « calendrier » comme un dictionnaire appareil → abonnement.
+ * L'ancienne forme — un seul abonnement à plat — est encore lue, pour que les
+ * calendriers déjà posés sur un téléphone continuent de répondre.
+ */
+function abonnementsDe(espaceLu) {
+  const c = espaceLu.calendrier;
+  if (!c || typeof c !== 'object') return {};
+  // Forme d'avant : un abonnement unique, sans appareil.
+  if (c.jetonEmpreinte) return { _unique: c };
+  return c;
+}
+
 async function calendrier(requete, magasin, id, surFichier) {
   if (!ID_VALIDE.test(id)) return json(400, { erreur: 'identifiant invalide' });
   const espaceLu = await magasin.lire(id);
   if (!espaceLu) {
     return surFichier ? texte(404, 'espace introuvable') : json(404, { erreur: 'espace introuvable' });
   }
+  const abos = abonnementsDe(espaceLu);
 
-  // Lecture par l'abonnement : jeton dans l'adresse, rien d'autre.
+  // Lecture par l'abonnement : jeton dans l'adresse, rien d'autre. C'est lui
+  // qui désigne l'appareil — l'adresse ne dit pas de qui est le calendrier.
   if (surFichier && requete.methode === 'GET') {
     const jeton = requete.parametres.get('jeton') || '';
-    if (!espaceLu.calendrier || !espaceLu.calendrier.jetonEmpreinte) {
-      return texte(404, 'aucun abonnement pour cet espace');
+    const cles = Object.keys(abos);
+    if (!cles.length) return texte(404, 'aucun abonnement pour cet espace');
+    if (!jeton) return texte(403, 'jeton invalide');
+    const empreinteJeton = await empreinte(jeton);
+    let trouve = null;
+    for (let i = 0; i < cles.length; i++) {
+      const a = abos[cles[i]];
+      if (a && a.jetonEmpreinte && memeEmpreinte(empreinteJeton, a.jetonEmpreinte)) { trouve = a; break; }
     }
-    if (!jeton || !memeEmpreinte(await empreinte(jeton), espaceLu.calendrier.jetonEmpreinte)) {
-      return texte(403, 'jeton invalide');
-    }
-    if (!espaceLu.calendrier.ics) {
+    if (!trouve) return texte(403, 'jeton invalide');
+    if (!trouve.ics) {
       // Rien n'a encore été déposé : mieux vaut une erreur qu'un calendrier
       // vide, qui effacerait ce que l'abonné a déjà.
       return texte(404, 'aucun plan déposé');
     }
-    return ics(espaceLu.calendrier.ics);
+    return ics(trouve.ics);
   }
 
   // Le reste passe par la clé de l'espace.
@@ -263,16 +290,24 @@ async function calendrier(requete, magasin, id, surFichier) {
     return json(401, { erreur: 'clé invalide' });
   }
 
-  // Créer ou renouveler le jeton d'abonnement.
+  // Quel appareil parle. Sans précision, on retombe sur l'abonnement unique
+  // d'avant, ce qui laisse fonctionner un client qui n'a pas encore migré.
+  const appareil = String(requete.parametres.get('appareil') ||
+    (requete.methode === 'POST' ? (corpsJson(requete).appareil || '') : '') || '_unique')
+    .replace(/[^A-Za-z0-9_-]/g, '').slice(0, 40) || '_unique';
+
+  // Créer ou renouveler le jeton d'abonnement de cet appareil.
   if (!surFichier && requete.methode === 'POST') {
     const corps = corpsJson(requete);
     const jeton = cleAleatoire();
     const contenu = typeof (corps && corps.ics) === 'string' ? corps.ics : '';
-    espaceLu.calendrier = {
+    const precedent = abos[appareil] || {};
+    abos[appareil] = {
       jetonEmpreinte: await empreinte(jeton),
-      ics: valideIcs(contenu) ? contenu : (espaceLu.calendrier && espaceLu.calendrier.ics) || '',
+      ics: valideIcs(contenu) ? contenu : (precedent.ics || ''),
       maj: new Date().toISOString(),
     };
+    espaceLu.calendrier = abos;
     await magasin.ecrire(id, espaceLu);
     return json(200, { jeton: jeton, url: adresseCalendrier(requete.origine, id, jeton) });
   }
@@ -283,18 +318,22 @@ async function calendrier(requete, magasin, id, surFichier) {
   if (surFichier && requete.methode === 'PUT') {
     const contenu = requete.corpsTexte || '';
     if (!valideIcs(contenu)) return json(400, { erreur: 'calendrier invalide' });
-    if (!espaceLu.calendrier || !espaceLu.calendrier.jetonEmpreinte) {
+    if (!abos[appareil] || !abos[appareil].jetonEmpreinte) {
       return json(400, { erreur: 'aucun abonnement' });
     }
-    espaceLu.calendrier.ics = contenu;
-    espaceLu.calendrier.maj = new Date().toISOString();
+    abos[appareil].ics = contenu;
+    abos[appareil].maj = new Date().toISOString();
+    espaceLu.calendrier = abos;
     await magasin.ecrire(id, espaceLu);
-    return json(200, { maj: espaceLu.calendrier.maj, octets: nbOctets(contenu) });
+    return json(200, { maj: abos[appareil].maj, octets: nbOctets(contenu) });
   }
 
-  // Révoquer : l'adresse cesse de répondre, les abonnés se figent.
+  // Révoquer : l'adresse de CET appareil cesse de répondre. Celles des autres
+  // continuent — révoquer pour soi ne doit pas couper le calendrier du voisin.
   if (!surFichier && requete.methode === 'DELETE') {
-    delete espaceLu.calendrier;
+    delete abos[appareil];
+    if (Object.keys(abos).length) espaceLu.calendrier = abos;
+    else delete espaceLu.calendrier;
     await magasin.ecrire(id, espaceLu);
     return json(200, { revoque: true });
   }

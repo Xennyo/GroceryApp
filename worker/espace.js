@@ -27,19 +27,37 @@ export class Espace {
       lire: async () => {
         const e = await this.state.storage.get(CLE_ESPACE);
         if (!e) return null;
-        if (e.calendrier) e.calendrier.ics = (await this.state.storage.get(CLE_ICS)) || '';
+        // Un abonnement par appareil : chaque .ics est rangé à part, sous son
+        // propre nom, et recollé à la lecture.
+        if (e.calendrier) {
+          const noms = Object.keys(e.calendrier);
+          for (let i = 0; i < noms.length; i++) {
+            e.calendrier[noms[i]].ics = (await this.state.storage.get(CLE_ICS + ':' + noms[i])) || '';
+          }
+        }
         return e;
       },
       ecrire: async (id, espace) => {
         const aRanger = Object.assign({}, espace);
+        const gardes = [];
         if (aRanger.calendrier) {
-          const cal = Object.assign({}, aRanger.calendrier);
-          const contenu = cal.ics || '';
-          delete cal.ics;
+          const cal = {};
+          const noms = Object.keys(aRanger.calendrier);
+          for (let i = 0; i < noms.length; i++) {
+            const a = Object.assign({}, aRanger.calendrier[noms[i]]);
+            const contenu = a.ics || '';
+            delete a.ics;
+            cal[noms[i]] = a;
+            gardes.push(CLE_ICS + ':' + noms[i]);
+            await this.state.storage.put(CLE_ICS + ':' + noms[i], contenu);
+          }
           aRanger.calendrier = cal;
-          await this.state.storage.put(CLE_ICS, contenu);
-        } else {
-          await this.state.storage.delete(CLE_ICS);
+        }
+        // Les .ics des abonnements révoqués n'ont plus de raison d'occuper la
+        // place : un demi-mégaoctet par appareil disparu, sinon.
+        const restants = await this.state.storage.list({ prefix: CLE_ICS });
+        for (const nom of restants.keys()) {
+          if (gardes.indexOf(nom) < 0) await this.state.storage.delete(nom);
         }
         await this.state.storage.put(CLE_ESPACE, aRanger);
       },

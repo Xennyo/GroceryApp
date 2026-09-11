@@ -672,8 +672,17 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
   min-height:var(--tap);
 }
 .liste-ordre li.survol{ border-color:var(--accent); background:var(--accent-doux); }
-.liste-ordre li.drag{ opacity:.5; }
-.liste-ordre .poignee{ cursor:grab; color:var(--texte-doux); font-size:1.1rem; touch-action:none; user-select:none; }
+/* La poignée est un vrai bouton : elle doit rester atteignable au clavier, et
+   « touch-action:none » est ce qui permet au doigt de glisser sans faire
+   défiler la page. */
+.liste-ordre .poignee{
+  flex:0 0 auto; border:0; background:transparent; padding:.3rem .2rem;
+  cursor:grab; color:var(--texte-doux); font-size:1.25rem; line-height:1;
+  touch-action:none; user-select:none;
+}
+.liste-ordre .poignee:active{ cursor:grabbing; }
+.liste-ordre.en-cours li{ transition:transform .12s ease; }
+.liste-ordre li.drag{ opacity:.85; box-shadow:var(--ombre); border-color:var(--accent); }
 .liste-ordre .nom{ flex:1; min-width:0; }
 
 /* ——— MODALES, BANDEAUX, TOASTS ——— */
@@ -913,7 +922,6 @@ const RAYONS = [
   ['pain',           'Pain & viennoiserie'],
   ['surgeles',       'Surgelés'],
   ['boissons',       'Boissons'],
-  ['hygiene',        'Hygiène & entretien'],
   ['autre',          'Autre'],
 ];
 const RAYON_LIBELLE = Object.fromEntries(RAYONS);
@@ -923,7 +931,7 @@ const RAYON_LIBELLE = Object.fromEntries(RAYONS);
 const RAYON_TEINTE = {
   fruits_legumes: 128, boucherie: 355, poissonnerie: 202, cremerie: 45,
   charcuterie: 18, epicerie_salee: 32, epicerie_sucree: 320, pain: 38,
-  surgeles: 190, boissons: 172, hygiene: 268, autre: 0,
+  surgeles: 190, boissons: 172, autre: 0,
 };
 const RAYONS_IDS = RAYONS.map(function (r) { return r[0]; });
 const ORDRE_RAYONS_DEFAUT = RAYONS_IDS.slice();
@@ -1069,9 +1077,6 @@ function donneesVides() {
       ordreRayons: ORDRE_RAYONS_DEFAUT.slice(),
       portionsBase: 4,
       serveurSync: '',
-      // Adresse d'abonnement du calendrier. Partagée avec l'espace : chaque
-      // appareil peut s'abonner sans qu'on la recrée.
-      abonnementCalendrier: '',
       // Ce qui est déjà parti au calendrier, et sous quelle révision : sans
       // cette mémoire, réexporter dupliquerait tout et un repas retiré de
       // l'application resterait indéfiniment dans le calendrier.
@@ -1090,6 +1095,7 @@ function donneesVides() {
    ------------------------------------------------------------------------- */
 const REGLAGES_APPAREIL_DEFAUT = {
   prenom: '',
+  abonnementCalendrier: '',
   theme: 'auto',
   policeTitres: 'livre',
   afficherPrix: true,
@@ -1121,6 +1127,8 @@ function normaliserReglagesAppareil(r) {
   const g = (r && typeof r === 'object') ? r : {};
   return {
     prenom: String(g.prenom || '').slice(0, 40),
+    abonnementCalendrier: (typeof g.abonnementCalendrier === 'string' &&
+      /^https?:\/\//.test(g.abonnementCalendrier)) ? g.abonnementCalendrier : '',
     theme: ['auto', 'clair', 'sombre'].indexOf(g.theme) >= 0 ? g.theme : 'auto',
     policeTitres: g.policeTitres === 'systeme' ? 'systeme' : 'livre',
     afficherPrix: g.afficherPrix !== false,
@@ -1339,8 +1347,6 @@ function normaliserRacine(d) {
     ordreRayons: ordre,
     portionsBase: (typeof g.portionsBase === 'number' && g.portionsBase > 0) ? Math.min(99, Math.round(g.portionsBase)) : 4,
     serveurSync: (typeof g.serveurSync === 'string') ? g.serveurSync.replace(/\/+$/, '') : '',
-    abonnementCalendrier: (typeof g.abonnementCalendrier === 'string' &&
-      /^https?:\/\//.test(g.abonnementCalendrier)) ? g.abonnementCalendrier : '',
     // Réglages d'un document d'avant la séparation : on les laisse passer tels
     // quels, le temps que l'appareil en prenne copie au démarrage. C'est
     // oublierReglagesDAppareil() qui les retire ensuite — les effacer ici les
@@ -1969,20 +1975,21 @@ const Store = (function () {
        ------------------------------------------------------------------- */
 
     /** Crée ou renouvelle l'abonnement. → { jeton, url } */
-    async creerAbonnementCalendrier(ics) {
-      if (!espaceCourant) throw new Error('Rejoignez un espace partagé d\'abord.');
+    async creerAbonnementCalendrier(ics, appareil) {
+      if (!espaceCourant) throw new Error('Aucun espace partagé ouvert.');
       const rep = await fetch(urlEspace('/calendrier'), {
-        method: 'POST', headers: entetes(), body: JSON.stringify({ ics: ics || '' }),
+        method: 'POST', headers: entetes(),
+        body: JSON.stringify({ ics: ics, appareil: appareil }),
       });
-      if (!rep.ok) throw new Error('Le serveur a refusé (' + rep.status + ').');
+      if (!rep.ok) throw new Error('Le serveur a refusé l\'abonnement (' + rep.status + ').');
       return await rep.json();
     },
 
     /** Dépose un plan à jour. → true si le serveur l'a pris. */
-    async publierCalendrier(ics) {
+    async publierCalendrier(ics, appareil) {
       if (!espaceCourant) return false;
       try {
-        const rep = await fetch(urlEspace('/calendrier.ics'), {
+        const rep = await fetch(urlEspace('/calendrier.ics?appareil=' + encodeURIComponent(appareil || '')), {
           method: 'PUT',
           headers: { 'Authorization': 'Bearer ' + espaceCourant.cle, 'Content-Type': 'text/calendar' },
           body: ics,
@@ -1992,9 +1999,10 @@ const Store = (function () {
     },
 
     /** Coupe l'abonnement : l'adresse cesse de répondre, les abonnés se figent. */
-    async revoquerAbonnementCalendrier() {
+    async revoquerAbonnementCalendrier(appareil) {
       if (!espaceCourant) return false;
-      const rep = await fetch(urlEspace('/calendrier'), { method: 'DELETE', headers: entetes() });
+      const rep = await fetch(urlEspace('/calendrier?appareil=' + encodeURIComponent(appareil || '')),
+        { method: 'DELETE', headers: entetes() });
       return rep.ok;
     },
 
@@ -3413,7 +3421,9 @@ const etat = {
 let empreinteCalendrierPublie = null;
 let minuteurCalendrier = null;
 function publierCalendrierSiBesoin() {
-  if (!D || !D.reglages.abonnementCalendrier) return;
+  if (!D || !RA.abonnementCalendrier) return;
+  // Le plan est fabriqué avec LES RÉGLAGES DE CET APPAREIL et déposé sous SON
+  // abonnement : c'est ce qui empêche l'horaire du voisin d'atterrir ici.
   // Sans jour, aucun repas ne part : ce n'est pas une raison de vider
   // l'abonnement, mais c'est bien ce que le plan dit, donc on le dépose.
   const plan = planEnIcs(D, { exportes: {}, heure: RA.heureRepas, rappel: RA.rappelMinutes });
@@ -3422,7 +3432,9 @@ function publierCalendrierSiBesoin() {
   if (empreinte === empreinteCalendrierPublie) return;
   empreinteCalendrierPublie = empreinte;
   clearTimeout(minuteurCalendrier);
-  minuteurCalendrier = setTimeout(function () { Store.publierCalendrier(plan.texte); }, 1200);
+  minuteurCalendrier = setTimeout(function () {
+    Store.publierCalendrier(plan.texte, Store.identifiantAppareil());
+  }, 1200);
 }
 
 async function sauvegarder() {
@@ -3438,8 +3450,9 @@ function appliquerTheme() {
   const t = RA.theme || 'auto';
   if (t === 'auto') document.documentElement.removeAttribute('data-theme');
   else document.documentElement.setAttribute('data-theme', t);
-  const pol = RA.policeTitres || 'livre';
-  document.documentElement.setAttribute('data-police', pol);
+  // Le serif des noms et des titres n'est plus optionnel : c'est l'identité de
+  // l'application, pas une préférence.
+  document.documentElement.setAttribute('data-police', 'livre');
 }
 
 function afficherPrix() { return RA.afficherPrix !== false; }
@@ -4858,7 +4871,7 @@ async function ajouterAuCalendrier() {
     toast('Aucun repas daté dans la période — donnez-leur un jour d\'abord.');
     return;
   }
-  const adresse = D.reglages.abonnementCalendrier;
+  const adresse = RA.abonnementCalendrier;
   const peutSAbonner = !!(infosEspaces && infosEspaces.courant);
 
   const corps = [el('p', { class: 'pt doux', style: 'margin:0 0 .6rem',
@@ -6187,14 +6200,6 @@ function sectionAffichage() {
     selTheme.appendChild(el('option', { value: t[0], text: t[1], selected: RA.theme === t[0] }));
   });
   selTheme.addEventListener('change', function () { reglerAppareil('theme', selTheme.value); appliquerTheme(); });
-  const selPolice = el('select', { style: 'max-width:200px' });
-  [['livre', 'Livre (serif)'], ['systeme', 'Système']].forEach(function (t) {
-    selPolice.appendChild(el('option', { value: t[0], text: t[1], selected: RA.policeTitres === t[0] }));
-  });
-  selPolice.addEventListener('change', function () {
-    reglerAppareil('policeTitres', selPolice.value);
-    appliquerTheme();
-  });
 
   const caseLancement = el('input', { type: 'checkbox', checked: RA.ecranLancement !== false });
   caseLancement.addEventListener('change', function () {
@@ -6208,7 +6213,6 @@ function sectionAffichage() {
     el('label', { class: 'inline-case' }, [casePrix, el('span', { text: 'Afficher les prix' })]),
     el('div', { class: 'ligne-champs', style: 'margin-top:.5rem' }, [
       el('label', { class: 'champ' }, [el('span', { text: 'Thème' }), selTheme]),
-      el('label', { class: 'champ' }, [el('span', { text: 'Noms et titres' }), selPolice]),
     ]),
     el('label', { class: 'inline-case', style: 'margin-top:.6rem' }, [
       caseLancement,
@@ -6233,7 +6237,7 @@ function blocAbonnement() {
     return bloc;
   }
 
-  const adresse = D.reglages.abonnementCalendrier;
+  const adresse = RA.abonnementCalendrier;
   if (!adresse) {
     bloc.appendChild(el('button', {
       type: 'button', class: 'btn', text: 'Créer l\'abonnement', onclick: creerAbonnementCalendrier,
@@ -6250,13 +6254,6 @@ function blocAbonnement() {
   ]));
   bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:.4rem 0 0',
     text: 'Laissez « Supprimer les alarmes » désactivé, sinon plus de rappel.' }));
-  // Les deux mécanismes cohabitent sans se voir : le calendrier abonné est un
-  // calendrier à part. Ce qu'un fichier a déposé ailleurs, l'abonnement ne
-  // peut pas l'atteindre — et c'est ce qui donne l'impression qu'il n'efface
-  // rien, alors qu'il remplace bien tout ce qui lui appartient.
-  bloc.appendChild(el('p', { class: 'tpt doux', style: 'margin:.3rem 0 0',
-    text: 'Si vous aviez déjà importé un fichier .ics, ces repas-là sont dans un autre ' +
-          'calendrier : l\'abonnement ne peut pas les retirer. Supprimez-les une fois à la main.' }));
   bloc.appendChild(el('button', {
     type: 'button', class: 'btn mini fantome danger', style: 'margin-top:.3rem',
     text: 'Révoquer', title: 'L\'adresse cesse de répondre ; les calendriers déjà abonnés se figent',
@@ -6268,8 +6265,8 @@ function blocAbonnement() {
 async function creerAbonnementCalendrier() {
   try {
     const plan = planEnIcs(D, { exportes: {}, heure: RA.heureRepas, rappel: RA.rappelMinutes });
-    const r = await Store.creerAbonnementCalendrier(plan.texte);
-    D.reglages.abonnementCalendrier = r.url;
+    const r = await Store.creerAbonnementCalendrier(plan.texte, Store.identifiantAppareil());
+    reglerAppareil('abonnementCalendrier', r.url);
     empreinteCalendrierPublie = plan.texte.replace(/DTSTAMP:[^\r\n]*/g, '');
     await sauvegarder();
     vuePlus();
@@ -6287,8 +6284,8 @@ async function revoquerAbonnementCalendrier() {
     labelOk: 'Révoquer', danger: true,
   });
   if (!ok) return;
-  try { await Store.revoquerAbonnementCalendrier(); } catch (e) { /* le jeton local part quand même */ }
-  D.reglages.abonnementCalendrier = '';
+  try { await Store.revoquerAbonnementCalendrier(Store.identifiantAppareil()); } catch (e) { /* le jeton local part quand même */ }
+  reglerAppareil('abonnementCalendrier', '');
   empreinteCalendrierPublie = null;
   await sauvegarder();
   vuePlus();
@@ -6526,36 +6523,80 @@ function modaleFusion(source) {
   });
 }
 
+/**
+ * Ordre des rayons, réarrangeable au doigt.
+ *
+ * L'API « drag and drop » de HTML ne connaît que la souris : sur un téléphone,
+ * la poignée ne répondait à rien. On passe donc par les événements de pointeur,
+ * qui couvrent le doigt, le stylet et la souris d'un seul code.
+ *
+ * Pendant le glissement on ne redessine pas : déplacer le nœud lui-même garde
+ * la capture du pointeur, et c'est l'ordre du DOM qui fait foi à la fin.
+ */
 function construireOrdreRayons() {
   const ul = el('ul', { class: 'liste-ordre' });
-  let indexDrag = null;
+
+  /** La ligne survolée, cherchée par position : le doigt cache l'écran. */
+  function ligneSous(y, sauf) {
+    const lignes = Array.prototype.slice.call(ul.children);
+    for (let i = 0; i < lignes.length; i++) {
+      if (lignes[i] === sauf) continue;
+      const r = lignes[i].getBoundingClientRect();
+      if (y >= r.top && y <= r.bottom) return lignes[i];
+    }
+    return null;
+  }
 
   function redessiner() {
     ul.innerHTML = '';
     D.reglages.ordreRayons.forEach(function (r, i) {
-      const li = el('li', { draggable: 'true', 'data-i': i }, [
-        el('span', { class: 'poignee', 'aria-hidden': 'true', text: '⠿' }),
+      const poignee = el('button', {
+        type: 'button', class: 'poignee', 'aria-label': 'Déplacer ' + RAYON_LIBELLE[r], text: '⠿',
+      });
+      const li = el('li', { 'data-rayon': r }, [
+        poignee,
         el('span', { class: 'nom', text: RAYON_LIBELLE[r] }),
         el('button', { type: 'button', class: 'btn mini fantome', text: '↑', 'aria-label': 'Monter ' + RAYON_LIBELLE[r], disabled: i === 0, onclick: function () { deplacer(i, i - 1); } }),
         el('button', { type: 'button', class: 'btn mini fantome', text: '↓', 'aria-label': 'Descendre ' + RAYON_LIBELLE[r], disabled: i === D.reglages.ordreRayons.length - 1, onclick: function () { deplacer(i, i + 1); } }),
       ]);
-      li.addEventListener('dragstart', function (ev) {
-        indexDrag = i; li.classList.add('drag');
-        try { ev.dataTransfer.effectAllowed = 'move'; ev.dataTransfer.setData('text/plain', String(i)); } catch (e) {}
+
+      poignee.addEventListener('pointerdown', function (ev) {
+        if (ev.button) return;              // seul le bouton principal
+        ev.preventDefault();                // pas de défilement pendant le glissement
+        try { poignee.setPointerCapture(ev.pointerId); } catch (e) {}
+        li.classList.add('drag');
+        ul.classList.add('en-cours');
+
+        const bouger = function (e) {
+          const cible = ligneSous(e.clientY, li);
+          if (!cible) return;
+          const r2 = cible.getBoundingClientRect();
+          const avant = e.clientY < r2.top + r2.height / 2;
+          ul.insertBefore(li, avant ? cible : cible.nextSibling);
+        };
+        const finir = async function () {
+          poignee.removeEventListener('pointermove', bouger);
+          poignee.removeEventListener('pointerup', finir);
+          poignee.removeEventListener('pointercancel', finir);
+          li.classList.remove('drag');
+          ul.classList.remove('en-cours');
+          const ordre = Array.prototype.slice.call(ul.children)
+            .map(function (n) { return n.dataset.rayon; });
+          if (ordre.join() !== D.reglages.ordreRayons.join()) {
+            D.reglages.ordreRayons = ordre;
+            await sauvegarder();
+          }
+          redessiner();
+        };
+        poignee.addEventListener('pointermove', bouger);
+        poignee.addEventListener('pointerup', finir);
+        poignee.addEventListener('pointercancel', finir);
       });
-      li.addEventListener('dragend', function () { indexDrag = null; redessiner(); });
-      li.addEventListener('dragover', function (ev) { ev.preventDefault(); li.classList.add('survol'); });
-      li.addEventListener('dragleave', function () { li.classList.remove('survol'); });
-      li.addEventListener('drop', function (ev) {
-        ev.preventDefault(); li.classList.remove('survol');
-        let src = indexDrag;
-        if (src === null) { const t = parseNombre(ev.dataTransfer.getData('text/plain')); src = (t === null) ? null : t; }
-        if (src === null || src === i) return;
-        deplacer(src, i);
-      });
+
       ul.appendChild(li);
     });
   }
+
   async function deplacer(de, vers) {
     const arr = D.reglages.ordreRayons;
     if (vers < 0 || vers >= arr.length) return;
@@ -6993,7 +7034,6 @@ function ouvrirSelecteurEspaces() {
 
   const actions = [{ label: 'Fermer', onClick: function (f) { f(); } }];
   if (infosEspaces.courant) {
-    actions.push({ label: 'Lien de partage', onClick: function (f) { f(); montrerLienPartage(); } });
   }
   actions.push({ label: 'Gérer', variant: 'principal', onClick: function (f) { f(); allerAuxReglages('sync'); } });
   ouvrirModale({ titre: 'Espaces', corps: corps, actions: actions });
@@ -7009,33 +7049,6 @@ async function basculerEspace(id) {
   allerA('semaine');
 }
 
-function montrerLienPartage() {
-  const lien = Store.lienPartage();
-  if (!lien) { toast('Aucun espace partagé ouvert.'); return; }
-  const zone = el('textarea', { rows: '4', readonly: true, style: 'font-size:.85rem' });
-  zone.value = lien;
-  ouvrirModale({
-    titre: 'Lien de partage',
-    corps: [
-      el('div', { class: 'avert', text: 'Ce lien contient la clé de l\'espace : qui l\'a peut tout voir et tout modifier. Ne le diffusez qu\'aux personnes concernées.' }),
-      zone,
-    ],
-    actions: [
-      { label: 'Fermer', onClick: function (f) { f(); } },
-      navigator.share ? { label: 'Partager', onClick: async function () {
-        const fait = await partagerTexte('Rejoindre mon espace de courses', lien);
-        if (!fait) toast('Partage indisponible : copiez le lien.');
-      } } : null,
-      { label: 'Copier', variant: 'principal', onClick: async function () {
-        let ok = false;
-        try { if (navigator.clipboard) { await navigator.clipboard.writeText(lien); ok = true; } } catch (e) { ok = false; }
-        if (!ok) { zone.focus(); zone.select(); toast('Copiez le lien sélectionné.'); }
-        else toast('Lien copié.');
-      } },
-    ],
-  });
-  setTimeout(function () { zone.focus(); zone.select(); }, 60);
-}
 
 /** Un lien de partage dans l'adresse : on propose de rejoindre l'espace. */
 async function traiterLienEntrant() {
@@ -7176,12 +7189,8 @@ function carteSynchronisation() {
   actions.appendChild(el('button', {
     type: 'button', class: 'btn', text: '⇥ Rejoindre avec un code', onclick: rejoindreParCode,
   }));
-  actions.appendChild(el('button', {
-    type: 'button', class: 'btn', text: 'Rejoindre avec un lien', onclick: rejoindreParLien,
-  }));
   if (courant) {
     actions.appendChild(el('button', { type: 'button', class: 'btn principal', text: 'Inviter', onclick: inviterParCode }));
-    actions.appendChild(el('button', { type: 'button', class: 'btn', text: 'Lien de partage', onclick: montrerLienPartage }));
     actions.appendChild(el('button', { type: 'button', class: 'btn', text: '↻ Synchroniser', onclick: async function () {
       await Store.synchroniser(); await rafraichirEtatEspaces(); rendre(); toast('Synchronisation demandée.');
     } }));
@@ -7300,7 +7309,7 @@ function creerEspacePartage() {
           } catch (e) { toast(e.message || 'Création impossible.'); return; }
           await rafraichirEtatEspaces();
           rendre();
-          montrerLienPartage();
+          await inviterParCode();
           sePresenter();
         },
       },
@@ -7401,34 +7410,6 @@ function rejoindreParCode() {
   setTimeout(function () { champCode.focus(); }, 0);
 }
 
-function rejoindreParLien() {
-  const champ = el('textarea', { rows: '3', placeholder: 'Collez ici le lien reçu' });
-  ouvrirModale({
-    titre: 'Rejoindre un espace',
-    corps: [
-      el('label', { class: 'champ' }, [el('span', { text: 'Lien de partage' }), champ]),
-      el('p', { class: 'pt doux', text: 'Vos données locales ne sont pas touchées : elles restent sous « Cet appareil ».' }),
-    ],
-    actions: [
-      { label: 'Annuler', onClick: function (f) { f(); } },
-      {
-        label: 'Rejoindre', variant: 'principal',
-        onClick: async function (f) {
-          const lien = champ.value.trim();
-          if (!lien) { champ.focus(); return; }
-          f();
-          try { D = await Store.rejoindreEspace(lien); }
-          catch (e) { toast(e.message || 'Impossible de rejoindre cet espace.'); return; }
-          await rafraichirEtatEspaces();
-          appliquerTheme();
-          allerA('semaine');
-          toast('Espace rejoint.');
-          sePresenter();
-        },
-      },
-    ],
-  });
-}
 
 /* ——— DÉMARRAGE ——————————————————————————————————————————————————————————— */
 
