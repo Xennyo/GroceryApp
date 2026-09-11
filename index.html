@@ -2,21 +2,46 @@
 <html lang="fr">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>Liste de courses</title>
 <link rel="canonical" href="./liste-courses.html">
 <meta http-equiv="refresh" content="0; url=./liste-courses.html">
+<meta name="theme-color" content="#0a6b4c">
+<!-- Page de redirection : elle ne dure que le temps d'un aller-retour, mais
+     c'est elle qu'on voit en ouvrant l'adresse du site. Peinte du même vert que
+     l'écran de lancement, elle ne s'annonce pas par un éclair clair. -->
 <style>
-  body{ margin:0; min-height:100dvh; display:grid; place-items:center;
+  html,body{ height:100%; }
+  body{ margin:0; display:grid; place-items:center;
         font-family:system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-        background:#f2f4f6; color:#15181d; }
-  @media (prefers-color-scheme: dark){ body{ background:#101317; color:#eef1f5; } }
-  a{ color:#0a6b4c; }
-  @media (prefers-color-scheme: dark){ a{ color:#5cd6a0; } }
+        background:linear-gradient(#0d7d59, #064e37); color:#ffffff; }
+  @media (prefers-color-scheme: dark){
+    body{ background:linear-gradient(#0b4b37, #05291e); color:#dff3e9; }
+  }
+  svg{ width:min(34vw,132px); height:auto; }
+  a{ position:absolute; bottom:2rem; color:inherit; font-size:.9rem; }
 </style>
 </head>
 <body>
-  <p>Ouverture de la <a href="./liste-courses.html">liste de courses</a>…</p>
+  <svg viewBox="96 98 320 320" aria-label="Liste de courses" role="img">
+    <defs>
+      <mask id="masque">
+        <rect x="96" y="98" width="320" height="320" fill="#000"/>
+        <path d="M132 196 h248 a20 20 0 0 1 20 22 l-24 150 a52 52 0 0 1 -51 44 h-138
+                 a52 52 0 0 1 -51 -44 l-24 -150 a20 20 0 0 1 20 -22 z" fill="#fff"/>
+        <g fill="#000">
+          <rect x="180" y="250" width="152" height="26" rx="13"/>
+          <rect x="180" y="304" width="118" height="26" rx="13"/>
+          <rect x="180" y="358" width="80"  height="26" rx="13"/>
+        </g>
+      </mask>
+    </defs>
+    <path d="M188 186 a68 68 0 0 1 136 0" fill="none" stroke="currentColor"
+          stroke-width="28" stroke-linecap="round"/>
+    <rect x="96" y="98" width="320" height="320" fill="currentColor" mask="url(#masque)"/>
+  </svg>
+  <!-- Dernier recours si ni la redirection ni le script ne passent. -->
+  <a href="./liste-courses.html">Ouvrir la liste de courses</a>
   <script>location.replace('./liste-courses.html');</script>
 </body>
 </html>

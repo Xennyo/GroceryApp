@@ -762,9 +762,59 @@ table.ref input[type="checkbox"]{ width:22px; height:22px; min-height:0; accent-
   .article.coche .nom,.article.coche .qte{ color:#666; }
   .detail-provenance{ display:none; }
 }
+
+/* ——— ÉCRAN DE LANCEMENT ———————————————————————————————————————————————————
+   Il est écrit dans le corps du document, pas fabriqué par le script : il doit
+   être peint dès la première image, sinon il arrive après ce qu'il est censé
+   couvrir. Le thème choisi dans les réglages n'est pas encore lu à cet
+   instant — seule la préférence du système est connue, et c'est elle qui
+   décide de la version sombre.
+   ------------------------------------------------------------------------- */
+#ecran-lancement{
+  position:fixed; inset:0; z-index:200;
+  display:flex; align-items:center; justify-content:center;
+  background:linear-gradient(#0d7d59, #064e37);
+  color:#ffffff;
+  transition:opacity .2s ease-out;   /* égale à LANCEMENT_FONDU_MS */
+}
+#ecran-lancement.efface{ opacity:0; pointer-events:none; }
+#ecran-lancement svg{ width:min(34vw,132px); height:auto;
+  animation:lancement-entree .18s cubic-bezier(.2,.7,.3,1) both; }
+@keyframes lancement-entree{ from{ transform:scale(.9); opacity:0 } to{ transform:none; opacity:1 } }
+@media (prefers-color-scheme: dark){
+  /* Plein écran la nuit : le même vert, assombri, et la marque un ton en dessous
+     du blanc pur. */
+  #ecran-lancement{ background:linear-gradient(#0b4b37, #05291e); color:#dff3e9; }
+}
+@media (prefers-reduced-motion: reduce){
+  #ecran-lancement{ transition:none; }
+  #ecran-lancement svg{ animation:none; }
+}
 </style>
 </head>
 <body>
+<!-- Peint avant tout le reste, effacé par le script une fois l'application
+     dessinée. Le dessin est celui de l'icône, sans son cadre. -->
+<div id="ecran-lancement" aria-hidden="true">
+  <svg viewBox="96 98 320 320" width="132" height="132" aria-hidden="true" focusable="false">
+    <defs>
+      <mask id="masque-lancement">
+        <!-- Blanc = le panier plein ; noir = les lignes de la liste, en réserve. -->
+        <rect x="96" y="98" width="320" height="320" fill="#000"/>
+        <path d="M132 196 h248 a20 20 0 0 1 20 22 l-24 150 a52 52 0 0 1 -51 44 h-138
+                 a52 52 0 0 1 -51 -44 l-24 -150 a20 20 0 0 1 20 -22 z" fill="#fff"/>
+        <g fill="#000">
+          <rect x="180" y="250" width="152" height="26" rx="13"/>
+          <rect x="180" y="304" width="118" height="26" rx="13"/>
+          <rect x="180" y="358" width="80"  height="26" rx="13"/>
+        </g>
+      </mask>
+    </defs>
+    <path d="M188 186 a68 68 0 0 1 136 0" fill="none" stroke="currentColor"
+          stroke-width="28" stroke-linecap="round"/>
+    <rect x="96" y="98" width="320" height="320" fill="currentColor" mask="url(#masque-lancement)"/>
+  </svg>
+</div>
 <div id="app">
   <nav class="tabbar" id="tabbar" aria-label="Navigation principale">
     <button type="button" data-tab="semaine" aria-current="page"><svg class="ic" viewBox="0 0 24 24" aria-hidden="true"><rect x="3" y="5" width="18" height="16" rx="3"/><path d="M3 10h18M8 3v4M16 3v4"/></svg>Semaine</button>
@@ -1265,6 +1315,7 @@ const Store = (function () {
   const CLE_LOCALE = 'listeCourses.v1';          // document hors espace (V1, inchangé)
   const CLE_REGISTRE = 'listeCourses.espaces';   // liste des espaces connus de cet appareil
   const PREFIXE_ESPACE = 'listeCourses.espace.'; // cache local d'un espace synchronisé
+  const CLE_LANCEMENT = 'listeCourses.ecranLancement'; // propre à l'appareil : voir plus bas
   const DEBOUNCE_MS = 400;
   const SONDAGE_MS = 5000;
 
@@ -1456,6 +1507,19 @@ const Store = (function () {
   }
 
   return {
+    /**
+     * L'écran de lancement doit être gardé ou retiré AVANT la première image,
+     * donc avant que load() n'ait eu le temps de rendre la main. C'est la seule
+     * préférence lue de façon synchrone, et la seule qui reste propre à
+     * l'appareil : elle décrit l'ouverture de l'application ici, pas le
+     * document partagé.
+     */
+    ecranLancementActif() { return lireBrut(CLE_LANCEMENT) !== 'non'; },
+    reglerEcranLancement(actif) {
+      if (actif) effacerBrut(CLE_LANCEMENT);
+      else ecrireBrut(CLE_LANCEMENT, 'non');
+    },
+
     /** → l'objet racine complet, ou null si rien n'a encore été stocké. */
     async load() {
       const reg = lireRegistre();
@@ -5810,12 +5874,24 @@ function sectionAffichage() {
     appliquerTheme();
   });
 
+  // Pas dans D.reglages : la décision doit être prise avant que le document ne
+  // soit lu. Elle vaut donc pour cet appareil, et pas pour l'espace partagé.
+  const caseLancement = el('input', { type: 'checkbox', checked: Store.ecranLancementActif() });
+  caseLancement.addEventListener('change', function () {
+    Store.reglerEcranLancement(caseLancement.checked);
+  });
+
   return el('div', { class: 'carte' }, [
     el('h2', { text: 'Affichage' }),
     el('label', { class: 'inline-case' }, [casePrix, el('span', { text: 'Afficher les prix' })]),
     el('div', { class: 'ligne-champs', style: 'margin-top:.5rem' }, [
       el('label', { class: 'champ' }, [el('span', { text: 'Thème' }), selTheme]),
       el('label', { class: 'champ' }, [el('span', { text: 'Noms et titres' }), selPolice]),
+    ]),
+    el('label', { class: 'inline-case', style: 'margin-top:.6rem' }, [
+      caseLancement,
+      el('span', { text: 'Écran de lancement' }),
+      el('span', { class: 'tpt doux', text: 'sur cet appareil' }),
     ]),
   ]);
 }
@@ -6888,6 +6964,58 @@ function signalerModeDegrade() {
   }));
 }
 
+/* ——— ÉCRAN DE LANCEMENT ———————————————————————————————————————————————————
+   L'écran est déjà à l'image quand ce script tourne ; il ne reste qu'à choisir
+   le moment de l'effacer. Deux garde-fous l'encadrent :
+
+   — un plancher, parce qu'un logo entrevu 40 ms ne se lit pas comme une
+     intention mais comme un raté d'affichage ;
+   — un plafond, parce que l'ouverture d'un espace synchronisé attend une
+     réponse du serveur : sans lui, un réseau qui traîne retiendrait
+     l'application derrière un écran vert. Il est armé tout de suite, il
+     survit donc à un démarrage qui échouerait en chemin.
+
+   Le plancher se compte à partir de la première image, pas du chargement de la
+   page : sur un fichier de 350 Ko l'analyse prend déjà une partie du délai, et
+   la compter reviendrait à n'afficher l'écran que le temps d'un battement.
+   ------------------------------------------------------------------------- */
+const LANCEMENT_PLANCHER_MS = 380;   // > durée de l'entrée : le logo se pose
+const LANCEMENT_PLAFOND_MS = 1200;
+const LANCEMENT_FONDU_MS = 200;   // doit rester égal à la durée du fondu en CSS
+
+const ecranLancement = (function () {
+  const noeud = document.getElementById('ecran-lancement');
+  if (!noeud) return { pret: function () {} };
+
+  const retirer = function () { if (noeud.parentNode) noeud.parentNode.removeChild(noeud); };
+
+  // Réglage éteint : retiré dans la foulée de l'analyse, avant la première
+  // image — il n'est donc jamais aperçu, pas même le temps d'un clignotement.
+  if (!Store.ecranLancementActif()) { retirer(); return { pret: function () {} }; }
+
+  let peintA = null;     // instant de la première image
+  let demande = false;   // le démarrage a signalé qu'il avait fini
+  let fini = false;
+
+  function effacer() {
+    if (fini) return;
+    fini = true;
+    noeud.classList.add('efface');
+    setTimeout(retirer, LANCEMENT_FONDU_MS + 60);
+  }
+  function effacerSiPossible() {
+    if (!demande || peintA === null || fini) return;
+    const reste = LANCEMENT_PLANCHER_MS - (Date.now() - peintA);
+    if (reste <= 0) effacer();
+    else setTimeout(effacer, reste);
+  }
+
+  requestAnimationFrame(function () { peintA = Date.now(); effacerSiPossible(); });
+  setTimeout(effacer, LANCEMENT_PLAFOND_MS);
+
+  return { pret: function () { demande = true; effacerSiPossible(); } };
+})();
+
 async function demarrer() {
   // Le service worker ne dépend ni des données ni du réseau : l'enregistrer en
   // premier fait démarrer la mise en cache hors ligne sans attendre, et garantit
@@ -6946,6 +7074,7 @@ async function demarrer() {
   document.body.appendChild(dl);
 
   allerA('semaine');
+  ecranLancement.pret();   // l'application est dessinée : l'écran peut s'effacer
 
   // Un lien de partage dans l'adresse : on propose de rejoindre l'espace.
   await traiterLienEntrant();
@@ -6995,7 +7124,13 @@ async function demarrer() {
   }
 }
 
-demarrer();
+demarrer().catch(function (e) {
+  // Un démarrage qui échoue ne doit pas laisser l'écran de lancement planté
+  // par-dessus l'application. Le plafond y pourvoit déjà ; ceci le fait tout
+  // de suite, et laisse l'erreur remonter à la console.
+  ecranLancement.pret();
+  throw e;
+});
 </script>
 </body>
 </html>
