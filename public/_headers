@@ -1,0 +1,4 @@
+# Le service worker ne doit jamais être servi depuis un cache HTTP long,
+# sinon les mises à jour n'arrivent plus jusqu'aux téléphones.
+/sw.js
+  Cache-Control: no-cache

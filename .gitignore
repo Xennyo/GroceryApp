@@ -1,0 +1,5 @@
+# État local de wrangler (base des Durable Objects, caches). Jamais versionné.
+.wrangler/
+node_modules/
+# Données du serveur Node lancé en local.
+donnees/

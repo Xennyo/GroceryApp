@@ -7,7 +7,7 @@
   "type": "commonjs",
   "main": "serveur/serveur.js",
   "scripts": {
-    "start": "node serveur/serveur.js --statique . --donnees ./donnees"
+    "start": "node serveur/serveur.js --statique ./public --donnees ./donnees"
   },
   "engines": {
     "node": ">=18"

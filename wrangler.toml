@@ -1,0 +1,29 @@
+# Déploiement Cloudflare. L'application et son serveur de synchronisation
+# tiennent dans un seul Worker : les fichiers sont servis en statique, et les
+# appels /api/ vont au Durable Object de l'espace concerné.
+#
+#   npx wrangler deploy
+#
+# Les espaces sont stockés dans les Durable Objects, adossés à SQLite. Ils
+# survivent aux déploiements : il n'y a pas de disque à monter, et rien à
+# perdre au redémarrage.
+name = "liste-courses"
+main = "worker/index.js"
+compatibility_date = "2026-01-01"
+
+# Les fichiers de l'application, et eux seuls. Un dossier dédié plutôt que la
+# racine du dépôt : ce qui est publié est alors ce qu'on y a mis, au lieu de
+# tout ce qu'on a oublié d'exclure.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[durable_objects.bindings]]
+name = "ESPACE"
+class_name = "Espace"
+
+# « new_sqlite_classes » et non « new_classes » : c'est la variante adossée à
+# SQLite, la seule disponible sur l'offre gratuite.
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Espace"]

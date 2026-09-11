@@ -7,22 +7,31 @@ additionnées, unités harmonisées, tri par rayon, coût estimé.
 
 | Fichier | Rôle |
 |---|---|
-| `liste-courses.html` | L'application entière. Ouvrable par double-clic, sans serveur ni réseau. |
-| `index.html` | Point d'entrée du site hébergé : redirige vers l'application. |
-| `manifest.webmanifest` | Nom, icônes et mode plein écran pour l'installation sur téléphone. |
-| `sw.js` | Service worker : rend l'application disponible hors ligne. |
-| `icone-*.png` | Icônes d'installation. |
-| `serveur/` | Serveur de synchronisation, facultatif. Voir `serveur/LISEZMOI.md`. |
-| `package.json`, `Dockerfile` | Pour déployer le tout comme un seul service. |
+| `public/liste-courses.html` | L'application entière. Ouvrable par double-clic, sans serveur ni réseau. |
+| `public/index.html` | Point d'entrée du site hébergé : redirige vers l'application. |
+| `public/manifest.webmanifest` | Nom, icônes et mode plein écran pour l'installation sur téléphone. |
+| `public/sw.js` | Service worker : rend l'application disponible hors ligne. |
+| `public/icone-*.png` | Icônes d'installation. |
+| `serveur/routes.js` | Les règles du serveur de synchronisation, indépendantes du moteur. |
+| `serveur/serveur.js` | Moteur Node : fichiers sur disque. Voir `serveur/LISEZMOI.md`. |
+| `worker/` | Moteur Cloudflare : Durable Objects. Même `routes.js`. |
+| `wrangler.toml` | Configuration du déploiement Cloudflare. |
+| `package.json`, `Dockerfile` | Pour déployer le tout comme un seul service Node. |
+
+**`public/` ne contient que ce qui doit être public.** C'est ce dossier, et lui
+seul, que Cloudflare publie : un fichier posé ailleurs dans le dépôt ne peut pas
+se retrouver en ligne par inadvertance.
 
 ## Deux façons de s'en servir
 
-**En local.** Double-cliquer `liste-courses.html`. Tout fonctionne, les données
+**En local.** Double-cliquer `public/liste-courses.html`. Tout fonctionne, les données
 restent dans ce navigateur, sur cet appareil. Aucun réseau n'est contacté.
 
-**Hébergée.** Publier le dépôt sur n'importe quel hébergeur statique
-(GitHub Pages, Netlify, Cloudflare Pages). L'application devient installable sur
-l'écran d'accueil d'un téléphone et fonctionne hors ligne.
+**Hébergée.** Publier `public/` sur n'importe quel hébergeur statique.
+L'application devient installable sur l'écran d'accueil d'un téléphone et
+fonctionne hors ligne. Pour que plusieurs appareils partagent la même liste, il
+faut en plus le serveur de synchronisation — `npx wrangler deploy` suffit, voir
+`serveur/LISEZMOI.md`.
 
 ### Installer sur iPhone
 
