@@ -4,7 +4,7 @@
    Bump de VERSION à chaque livraison : c'est ce qui déclenche une réinstallation. */
 'use strict';
 
-const VERSION = 'v26';
+const VERSION = 'v27';
 const CACHE = 'liste-courses-' + VERSION;
 
 const COQUILLE = [

@@ -26,6 +26,22 @@ const CLE_JOURNAL = 'journal';
 const CLE_ICS = 'ics';
 const CLE_INVITATION = 'invitation';
 
+/**
+ * Les abonnements de l'espace, sous leur forme actuelle : appareil → abonnement.
+ *
+ * Un espace créé avant la séparation par appareil porte un abonnement UNIQUE,
+ * à plat : { jetonEmpreinte, maj }. Le prendre pour un dictionnaire fait lire
+ * « jetonEmpreinte » et « maj » comme des noms d'appareils, et écrire « .ics »
+ * sur la chaîne de l'empreinte — ce qui lève, et fait échouer non pas le
+ * calendrier, mais TOUTE requête sur l'espace : lire ne marche plus, écrire
+ * non plus. C'est ce qui a figé les espaces déjà abonnés à la mise à jour.
+ */
+function abonnementsDe(calendrier) {
+  if (!calendrier || typeof calendrier !== 'object') return null;
+  if (typeof calendrier.jetonEmpreinte === 'string') return { _unique: calendrier };
+  return calendrier;
+}
+
 export class Espace {
   constructor(state, env) {
     this.state = state;
@@ -40,11 +56,21 @@ export class Espace {
         if (!Array.isArray(e.journal)) e.journal = (await this.state.storage.get(CLE_JOURNAL)) || [];
         // Un abonnement par appareil : chaque .ics est rangé à part, sous son
         // propre nom, et recollé à la lecture.
-        if (e.calendrier) {
-          const noms = Object.keys(e.calendrier);
+        const abos = abonnementsDe(e.calendrier);
+        if (abos) {
+          const noms = Object.keys(abos);
           for (let i = 0; i < noms.length; i++) {
-            e.calendrier[noms[i]].ics = (await this.state.storage.get(CLE_ICS + ':' + noms[i])) || '';
+            const a = abos[noms[i]];
+            // Une entrée qui n'est pas un abonnement n'a rien à faire là ;
+            // lui écrire dessus est précisément ce qui cassait tout.
+            if (!a || typeof a !== 'object') { delete abos[noms[i]]; continue; }
+            a.ics = (await this.state.storage.get(CLE_ICS + ':' + noms[i])) ||
+              // Le calendrier de l'abonnement unique était rangé sous « ics »,
+              // sans nom d'appareil. On le récupère au lieu de le perdre : sans
+              // ça, le téléphone déjà abonné verrait son agenda se vider.
+              (noms[i] === '_unique' ? (await this.state.storage.get(CLE_ICS)) : '') || '';
           }
+          e.calendrier = abos;
         }
         return e;
       },
@@ -53,11 +79,13 @@ export class Espace {
         await this.state.storage.put(CLE_JOURNAL, Array.isArray(espace.journal) ? espace.journal : []);
         delete aRanger.journal;
         const gardes = [];
-        if (aRanger.calendrier) {
+        const abos = abonnementsDe(aRanger.calendrier);
+        if (abos) {
           const cal = {};
-          const noms = Object.keys(aRanger.calendrier);
+          const noms = Object.keys(abos);
           for (let i = 0; i < noms.length; i++) {
-            const a = Object.assign({}, aRanger.calendrier[noms[i]]);
+            if (!abos[noms[i]] || typeof abos[noms[i]] !== 'object') continue;
+            const a = Object.assign({}, abos[noms[i]]);
             const contenu = a.ics || '';
             delete a.ics;
             cal[noms[i]] = a;
