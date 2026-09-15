@@ -26,14 +26,47 @@ une seule adresse à partager.
 
 ## Déployer sur Cloudflare
 
+Depuis un ordinateur, dans le dossier du dépôt, sur la branche à déployer :
+
 ```bash
-npx wrangler login      # une fois
+git pull                # récupérer la version à mettre en service
+npx wrangler login      # une fois, ouvre le navigateur
 npx wrangler deploy
 ```
 
 C'est tout. `wrangler.toml` déclare le reste : `public/` est publié comme
 fichiers de l'application, et les appels `/api/` vont au Durable Object de
 l'espace concerné.
+
+**Rien ne se déploie tout seul.** Pousser sur GitHub ne met rien en service :
+il n'y a pas d'action GitHub dans ce dépôt. Tant que `wrangler deploy` n'a pas
+tourné, c'est l'ancien code qui répond. (Si le dépôt est relié à Cloudflare par
+l'intégration Git du tableau de bord, c'est alors la branche configurée là-bas
+qui fait foi, et elle seule.)
+
+### Vérifier ce qui tourne vraiment
+
+Ouvrir `https://<votre-adresse>/api/sante` dans un navigateur :
+
+```json
+{"etat":"ok","version":1,"regles":2}
+```
+
+`regles` dit quelle version des **règles** est en service — pas celle des
+fichiers, celle du code qui décide. Pas de `regles` du tout : c'est un code
+antérieur à cette notion. C'est la seule façon de départager « j'ai déployé »
+et « le correctif est en service ».
+
+L'application sait le demander elle-même : Plus → Réglages → Partage et
+synchronisation, bouton **Tester ce serveur** quand une erreur est affichée.
+
+### Le nom du Worker n'est pas décoratif
+
+`name` dans `wrangler.toml` désigne le Worker **et le stockage des espaces**.
+Déployer avec un autre nom ne met pas à jour l'application en service : cela
+crée un second Worker, vide, à une autre adresse, et laisse le premier tel
+quel. Le nom à écrire est celui qu'on lit dans l'adresse de l'application —
+`<nom-du-worker>.<sous-domaine>.workers.dev` — et il ne change plus ensuite.
 
 **Pourquoi ce choix.** Un espace = un Durable Object. Cloudflare n'exécute
 qu'une requête à la fois par objet, donc « lire puis écrire » est indivisible
@@ -47,7 +80,7 @@ stockage. L'application ne sonde le serveur que lorsque son onglet est visible,
 ce qui met deux téléphones à quelques centaines de requêtes par jour.
 
 Le premier déploiement crée le Worker et son nom d'hôte
-(`liste-courses.<compte>.workers.dev`). C'est l'adresse à mettre dans
+(`<name>.<sous-domaine>.workers.dev`, d'après `name` dans `wrangler.toml`). C'est l'adresse à mettre dans
 l'application, sous Plus → Synchronisation — ou rien du tout si l'application
 est servie par ce même Worker, puisqu'elle se relie alors toute seule.
 

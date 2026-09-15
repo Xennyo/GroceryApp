@@ -14,7 +14,15 @@
 #   une migration « renamed_classes », jamais en éditant class_name seul, et
 #   « deleted_classes » efface définitivement les données.
 #   test-maj.js vérifie que ce triplet n'a pas bougé.
-name = "liste-courses"
+#
+#   « name » vaut le nom du Worker RÉELLEMENT en service, et non un nom choisi
+#   ici : c'est lui qui désigne le Durable Object où vivent les espaces. Il a
+#   d'abord été écrit « liste-courses » alors que le Worker déployé s'appelle
+#   « groceryapp » (visible dans l'adresse : groceryapp.<sous-domaine>.workers.dev).
+#   Déployer avec l'ancienne valeur aurait créé un SECOND Worker, vide, à une
+#   autre adresse, en laissant l'espace en panne là où il est. C'est corrigé
+#   ci-dessous, et cela ne doit plus bouger.
+name = "groceryapp"
 main = "worker/index.js"
 compatibility_date = "2026-01-01"
 
