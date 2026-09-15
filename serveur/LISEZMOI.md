@@ -49,7 +49,7 @@ qui fait foi, et elle seule.)
 Ouvrir `https://<votre-adresse>/api/sante` dans un navigateur :
 
 ```json
-{"etat":"ok","version":1,"regles":2}
+{"etat":"ok","version":1,"regles":3}
 ```
 
 `regles` dit quelle version des **règles** est en service — pas celle des

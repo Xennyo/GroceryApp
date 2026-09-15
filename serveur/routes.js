@@ -42,8 +42,9 @@ const JOURNAL_OCTETS_MAX = 128 * 1024;   // et surtout : 128 Ko, au plus
    VRAIMENT sur le serveur. Sans elle, « j'ai déployé » et « le correctif est
    en service » sont deux affirmations qu'on ne peut pas départager.
      1 — première version publiée
-     2 — journal borné en octets et rangé à part (espaces qui se figeaient) */
-const REGLES_VERSION = 2;
+     2 — journal borné en octets et rangé à part (espaces qui se figeaient)
+     3 — abonnement unique d'avant relu correctement (espaces figés en 400) */
+const REGLES_VERSION = 3;
 
 /* ——— Outils communs aux deux moteurs ————————————————————————————————————
    WebCrypto et TextEncoder existent à l'identique dans Node 18+ et dans
