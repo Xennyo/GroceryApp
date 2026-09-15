@@ -186,8 +186,20 @@ ou `{c: [...], d: true}` pour une suppression. Deux modifications sur des chemin
 différents fusionnent sans se marcher dessus ; sur le même chemin, la dernière
 arrivée l'emporte.
 
-Le journal conserve les 500 dernières opérations. Un client plus en retard que ça
-reçoit le document complet.
+Le journal conserve les dernières opérations, dans la limite de 200 entrées **et
+de 128 Ko**. Un client plus en retard que ça reçoit le document complet.
+
+La borne en octets n'est pas un détail. Une opération peut peser cent fois une
+autre — l'historique des semaines voyage d'un seul bloc — de sorte qu'un plafond
+compté en entrées ne dit rien du poids réel. Sans elle, l'enregistrement d'un
+espace grossit sans fin jusqu'à dépasser ce qu'une valeur peut peser (2 Mio
+annoncés sur Cloudflare, un peu plus en pratique), et à partir de là plus aucune
+modification ne passe, définitivement : l'espace est figé pour tout le monde.
+
+Le journal est d'ailleurs rangé à part du document dans le Durable Object, sous
+sa propre clé, pour qu'il ne puisse jamais empêcher le document de s'écrire. Un
+espace déjà bloqué se répare de lui-même : la première écriture après la mise à
+jour le sort de l'enregistrement et le ramène dans ses bornes.
 
 ## Changer de plateforme
 

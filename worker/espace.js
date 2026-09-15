@@ -12,10 +12,17 @@
  * Le calendrier est rangé à part. Un .ics pèse jusqu'à 512 Ko : le garder dans
  * le même enregistrement que le document ferait réécrire un demi-mégaoctet à
  * chaque case cochée.
+ *
+ * Le journal aussi, et pour une raison plus grave : une valeur ne peut pas
+ * dépasser quelques mégaoctets. Tant qu'il vivait dans le même enregistrement que le
+ * document, il suffisait qu'il grossisse pour que l'espace entier devienne
+ * impossible à écrire — et là, plus rien ne passait. Séparés, le document
+ * garde son budget à lui, et un journal trop lourd ne peut plus rien bloquer.
  */
 import routes from '../serveur/routes.js';
 
 const CLE_ESPACE = 'espace';
+const CLE_JOURNAL = 'journal';
 const CLE_ICS = 'ics';
 const CLE_INVITATION = 'invitation';
 
@@ -27,6 +34,10 @@ export class Espace {
       lire: async () => {
         const e = await this.state.storage.get(CLE_ESPACE);
         if (!e) return null;
+        // Le journal a longtemps voyagé dans l'enregistrement lui-même : on
+        // l'y reprend s'il s'y trouve encore, et la première écriture le
+        // rangera dehors. Un espace déjà en place n'a rien à faire pour ça.
+        if (!Array.isArray(e.journal)) e.journal = (await this.state.storage.get(CLE_JOURNAL)) || [];
         // Un abonnement par appareil : chaque .ics est rangé à part, sous son
         // propre nom, et recollé à la lecture.
         if (e.calendrier) {
@@ -39,6 +50,8 @@ export class Espace {
       },
       ecrire: async (id, espace) => {
         const aRanger = Object.assign({}, espace);
+        await this.state.storage.put(CLE_JOURNAL, Array.isArray(espace.journal) ? espace.journal : []);
+        delete aRanger.journal;
         const gardes = [];
         if (aRanger.calendrier) {
           const cal = {};

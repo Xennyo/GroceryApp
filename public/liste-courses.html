@@ -1556,11 +1556,30 @@ const Store = (function () {
   }
 
   /* --- Fabrication des opérations à partir des modifications locales --- */
+
+  /**
+   * Deux écritures sur le même chemin : seule la dernière compte. Appliquer
+   * les deux ou la seconde donne le même document, alors autant n'en garder
+   * qu'une.
+   *
+   * Ce tassement est ce qui borne la file d'attente. Sans lui, un serveur qui
+   * refuse — ou une longue coupure — la laisse enfler à chaque enregistrement,
+   * jusqu'à ce qu'elle ne passe plus du tout ; et comme elle ne part jamais,
+   * elle ne redescend jamais. Avec lui, elle ne dépasse pas le nombre de
+   * chemins réellement touchés.
+   */
+  function tasserOperations(ops) {
+    const valides = (ops || []).filter(function (op) { return op && Array.isArray(op.c); });
+    const dernier = new Map();
+    valides.forEach(function (op, i) { dernier.set(op.c.join('\u0000'), i); });
+    return valides.filter(function (op, i) { return dernier.get(op.c.join('\u0000')) === i; });
+  }
+
   function noterModifications() {
     if (!espaceCourant || base === null) return;
     const ops = differencesEnOperations(base, racine);
     if (!ops.length) return;
-    enAttente = enAttente.concat(ops);
+    enAttente = tasserOperations(enAttente.concat(ops));
     base = copie(racine);   // la base suit le local ; le serveur les recevra
   }
 
@@ -1596,7 +1615,11 @@ const Store = (function () {
         if (rep.status === 404) { signalerEtat('introuvable'); arreterSondage(); return; }
         if (!rep.ok) throw new Error('envoi refusé (' + rep.status + ')');
         await rep.json();
-        enAttente = enAttente.slice(aEnvoyer.length);
+        // On retire exactement ce qui est parti, et non les premiers de la
+        // file : une écriture pendant l'envoi a pu tasser celle-ci, et compter
+        // les places supprimerait alors une opération toute neuve.
+        const partis = new Set(aEnvoyer);
+        enAttente = enAttente.filter(function (op) { return !partis.has(op); });
       }
 
       // 2. Récupérer tout ce qui s'est écrit depuis notre position d'origine.
@@ -1660,7 +1683,10 @@ const Store = (function () {
       racine = migrate(cache.document);
       base = cache.base || copie(racine);
       version = cache.version || 0;
-      enAttente = Array.isArray(cache.enAttente) ? cache.enAttente : [];
+      // Une file héritée d'une période où le serveur refusait tout peut peser
+      // des méga-octets : on la tasse en la relisant, sinon elle repart telle
+      // quelle et se fait refuser de nouveau.
+      enAttente = tasserOperations(Array.isArray(cache.enAttente) ? cache.enAttente : []);
     } else {
       racine = null; base = null; version = 0; enAttente = [];
     }
@@ -1757,8 +1783,9 @@ const Store = (function () {
       if (valeur === undefined) delete noeud[parts[parts.length - 1]];
       else noeud[parts[parts.length - 1]] = valeur;
       if (espaceCourant && base !== null) {
-        enAttente.push(valeur === undefined ? { c: parts, d: true } : { c: parts, v: valeur });
-        appliquerOperations(base, [valeur === undefined ? { c: parts, d: true } : { c: parts, v: valeur }]);
+        const op = valeur === undefined ? { c: parts, d: true } : { c: parts, v: valeur };
+        enAttente = tasserOperations(enAttente.concat([op]));
+        appliquerOperations(base, [op]);
       }
       programmerEcriture();
       if (espaceCourant) echanger(false);

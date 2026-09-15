@@ -21,8 +21,21 @@
 
 const ID_VALIDE = /^[a-z0-9]{16,40}$/;
 const TAILLE_MAX = 2 * 1024 * 1024;   // 2 Mo par requête
-const JOURNAL_MAX = 500;              // opérations conservées pour le rattrapage
 const ICS_MAX = 512 * 1024;
+
+/* Bornes du journal. Il ne sert qu'à rattraper : ce qu'il ne porte plus, le
+   document complet le dira. Le borner ne perd donc rien — ne pas le borner,
+   si : l'enregistrement d'un espace grossit alors sans fin jusqu'à ce que le
+   stockage refuse de l'écrire — 2 Mio annoncés par valeur sur Cloudflare, un
+   peu plus en pratique — et à partir de là PLUS AUCUNE modification ne passe,
+   définitivement. Mesuré : refus au 128e archivage de semaine.
+
+   Un plafond en nombre d'entrées ne suffit pas : une opération peut peser
+   cent fois une autre — l'historique des semaines voyage d'un seul bloc — de
+   sorte que cinq cents entrées vont de quelques kilo-octets à plusieurs
+   méga-octets. C'est donc le poids qui décide. */
+const JOURNAL_MAX = 200;                 // entrées, au plus
+const JOURNAL_OCTETS_MAX = 128 * 1024;   // et surtout : 128 Ko, au plus
 
 /* ——— Outils communs aux deux moteurs ————————————————————————————————————
    WebCrypto et TextEncoder existent à l'identique dans Node 18+ et dans
@@ -126,6 +139,25 @@ function valideIcs(texte) {
     texte.indexOf('BEGIN:VCALENDAR') === 0 &&
     texte.indexOf('END:VCALENDAR') > 0 &&
     nbOctets(texte) <= ICS_MAX;
+}
+
+/**
+ * Le journal ramené dans ses bornes : on garde les dernières entrées tant
+ * qu'elles tiennent dans le budget, en partant de la plus récente.
+ *
+ * Une entrée trop grosse à elle seule est écartée comme les autres — le
+ * journal peut donc redevenir vide, et c'est très bien : tout le monde repart
+ * alors du document complet, qui est la seule source de vérité.
+ */
+function bornerJournal(journal) {
+  const garde = [];
+  let poids = 0;
+  for (let i = journal.length - 1; i >= 0 && garde.length < JOURNAL_MAX; i--) {
+    poids += nbOctets(JSON.stringify(journal[i]));
+    if (poids > JOURNAL_OCTETS_MAX) break;
+    garde.unshift(journal[i]);
+  }
+  return garde;
 }
 
 /* ——— Réponses ——————————————————————————————————————————————————————————— */
@@ -400,7 +432,14 @@ async function espace(requete, magasin, id, surOperations) {
     const plusAncien = espaceLu.journal.length ? espaceLu.journal[0].v : espaceLu.version + 1;
     if (depuis > 0 && depuis >= plusAncien - 1 && depuis <= espaceLu.version) {
       const suite = espaceLu.journal.filter(function (e) { return e.v > depuis; });
-      return json(200, { id: id, nom: espaceLu.nom, version: espaceLu.version, operations: suite });
+      // Rattraper ne doit jamais coûter plus cher que tout relire : après une
+      // longue absence, la suite des opérations pèse parfois plus que le
+      // document qu'elle reconstruit. On ne pèse que s'il y a quelque chose à
+      // envoyer — un sondage qui ne rapporte rien ne doit rien coûter.
+      if (!suite.length ||
+          nbOctets(JSON.stringify(suite)) <= nbOctets(JSON.stringify(espaceLu.document || null))) {
+        return json(200, { id: id, nom: espaceLu.nom, version: espaceLu.version, operations: suite });
+      }
     }
     return json(200, { id: id, nom: espaceLu.nom, version: espaceLu.version, document: espaceLu.document });
   }
@@ -421,7 +460,7 @@ async function espace(requete, magasin, id, surOperations) {
         v: espaceLu.version, operations: operations, ts: Date.now(),
         auteur: String(corps.auteur || '').slice(0, 40),
       });
-      if (espaceLu.journal.length > JOURNAL_MAX) espaceLu.journal = espaceLu.journal.slice(-JOURNAL_MAX);
+      espaceLu.journal = bornerJournal(espaceLu.journal);
     } else if (corps.document && espaceLu.version === 0) {
       espaceLu.version = 1;
     }
@@ -501,6 +540,7 @@ function appliquerOperations(doc, operations) {
 
 const API = {
   ID_VALIDE: ID_VALIDE, TAILLE_MAX: TAILLE_MAX, JOURNAL_MAX: JOURNAL_MAX,
+  JOURNAL_OCTETS_MAX: JOURNAL_OCTETS_MAX, bornerJournal: bornerJournal,
   CODE_LONGUEUR: CODE_LONGUEUR, INVITATION_MS: INVITATION_MS,
   codeInvitation: codeInvitation, normaliserCode: normaliserCode, codeValide: codeValide,
   empreinte: empreinte, identifiantEspace: identifiantEspace, cleAleatoire: cleAleatoire,
