@@ -37,6 +37,14 @@ const ICS_MAX = 512 * 1024;
 const JOURNAL_MAX = 200;                 // entrées, au plus
 const JOURNAL_OCTETS_MAX = 128 * 1024;   // et surtout : 128 Ko, au plus
 
+/* Version des règles, annoncée par /api/sante. Elle ne sert qu'à une chose,
+   mais elle la sert bien : savoir, depuis un navigateur, quel code tourne
+   VRAIMENT sur le serveur. Sans elle, « j'ai déployé » et « le correctif est
+   en service » sont deux affirmations qu'on ne peut pas départager.
+     1 — première version publiée
+     2 — journal borné en octets et rangé à part (espaces qui se figeaient) */
+const REGLES_VERSION = 2;
+
 /* ——— Outils communs aux deux moteurs ————————————————————————————————————
    WebCrypto et TextEncoder existent à l'identique dans Node 18+ et dans
    Workers : une seule implémentation suffit, il n'y a pas de variante à
@@ -200,7 +208,7 @@ async function router(requete, magasin) {
   const chemin = requete.chemin;
 
   if (methode === 'OPTIONS') return json(204, {});
-  if (chemin === '/api/sante') return json(200, { etat: 'ok', version: 1 });
+  if (chemin === '/api/sante') return json(200, { etat: 'ok', version: 1, regles: REGLES_VERSION });
 
   if (chemin === '/api/espaces' && methode === 'POST') return await creer(requete, magasin);
 
@@ -540,6 +548,7 @@ function appliquerOperations(doc, operations) {
 
 const API = {
   ID_VALIDE: ID_VALIDE, TAILLE_MAX: TAILLE_MAX, JOURNAL_MAX: JOURNAL_MAX,
+  REGLES_VERSION: REGLES_VERSION,
   JOURNAL_OCTETS_MAX: JOURNAL_OCTETS_MAX, bornerJournal: bornerJournal,
   CODE_LONGUEUR: CODE_LONGUEUR, INVITATION_MS: INVITATION_MS,
   codeInvitation: codeInvitation, normaliserCode: normaliserCode, codeValide: codeValide,

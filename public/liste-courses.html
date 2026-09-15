@@ -1460,6 +1460,10 @@ const Store = (function () {
   let base = null;            // document tel que le serveur l'a, à notre connaissance
   let enAttente = [];         // opérations locales pas encore acceptées
   let etat = 'local';         // local | synchronise | envoi | horsligne | erreur
+  // Dernière cause d'échec, telle que le serveur ou le réseau l'a donnée.
+  // « Synchro en échec » sans rien d'autre ne permet à personne de chercher :
+  // ni à qui s'en sert, ni à qui l'a écrite.
+  let dernierEchec = null;
   let sondage = null;
   let echangeEnCours = false;
   const auteur = Math.random().toString(36).slice(2, 8);
@@ -1584,6 +1588,23 @@ const Store = (function () {
   }
 
   /* --- Dialogue avec le serveur --- */
+
+  /**
+   * L'erreur telle qu'elle s'est produite : le code HTTP, et ce que le serveur
+   * en a dit. « refusé (400) » ne se cherche pas ; « corps trop volumineux »,
+   * si.
+   */
+  async function echecHttp(quoi, rep) {
+    let detail = '';
+    try {
+      const t = await rep.text();
+      try { detail = String(JSON.parse(t).erreur || ''); } catch (e) { detail = t.slice(0, 200); }
+    } catch (e) { /* corps illisible : le code suffira */ }
+    const err = new Error(quoi + ' (' + rep.status + ')' + (detail ? ' : ' + detail : ''));
+    err.code = rep.status;
+    return err;
+  }
+
   function urlEspace(suffixe) {
     const s = String(espaceCourant.serveur).replace(/\/+$/, '');
     return s + '/api/espaces/' + espaceCourant.id + (suffixe || '');
@@ -1613,7 +1634,7 @@ const Store = (function () {
           body: JSON.stringify({ operations: aEnvoyer, auteur: auteur }),
         });
         if (rep.status === 404) { signalerEtat('introuvable'); arreterSondage(); return; }
-        if (!rep.ok) throw new Error('envoi refusé (' + rep.status + ')');
+        if (!rep.ok) throw await echecHttp('envoi refusé', rep);
         await rep.json();
         // On retire exactement ce qui est parti, et non les premiers de la
         // file : une écriture pendant l'envoi a pu tasser celle-ci, et compter
@@ -1628,7 +1649,7 @@ const Store = (function () {
       // Ce n'est pas une panne passagère, inutile de continuer à sonder — et
       // l'appareil, lui, a toujours le document complet.
       if (rep2.status === 404) { signalerEtat('introuvable'); arreterSondage(); return; }
-      if (!rep2.ok) throw new Error('lecture refusée (' + rep2.status + ')');
+      if (!rep2.ok) throw await echecHttp('lecture refusée', rep2);
       const r2 = await rep2.json();
       if (r2.nom && espaceCourant.nom !== r2.nom) {
         espaceCourant.nom = r2.nom;
@@ -1657,8 +1678,17 @@ const Store = (function () {
       } else {
         ecrireMaintenant();
       }
+      dernierEchec = null;
       signalerEtat(enAttente.length ? 'envoi' : 'synchronise');
     } catch (e) {
+      dernierEchec = {
+        quand: new Date().toISOString(),
+        serveur: espaceCourant ? String(espaceCourant.serveur) : '',
+        code: e.code || 0,
+        // Un fetch qui échoue ne dit que « Failed to fetch » : l'adresse, elle,
+        // dit lequel des deux serveurs ne répond pas.
+        message: String((e && e.message) || e) || 'cause inconnue',
+      };
       signalerEtat(navigator.onLine === false ? 'horsligne' : 'erreur');
     } finally {
       echangeEnCours = false;
@@ -1837,6 +1867,7 @@ const Store = (function () {
       return {
         courant: reg.courant,
         etat: etat,
+        echec: dernierEchec ? copie(dernierEchec) : null,
         enAttente: enAttente.length,
         espaces: reg.espaces.map(function (e) { return { id: e.id, nom: e.nom, serveur: e.serveur }; }),
       };
@@ -7167,6 +7198,38 @@ function carteSynchronisation() {
           return (m.prenom || 'Sans prénom') + (m.id === moi ? ' (vous)' : '');
         }).join(', ') }),
     ]));
+  }
+
+  // « Synchro en échec » ne dit rien à personne. La cause exacte, elle, se
+  // cherche : un 400 du serveur, un 401 de clé refusée et une adresse qui ne
+  // répond plus sont trois pannes différentes, avec trois remèdes différents.
+  if (courant && infosEspaces.echec && (infosEspaces.etat === 'erreur' || infosEspaces.etat === 'horsligne')) {
+    const e = infosEspaces.echec;
+    const bloc = el('div', { class: 'carte plate', style: 'margin:.2rem 0 .6rem;border-color:var(--danger)' }, [
+      el('p', { class: 'tpt', style: 'margin:0 0 .3rem', text: 'Dernier échec : ' + e.message }),
+      el('p', { class: 'tpt doux', style: 'margin:0 0 .5rem',
+        text: 'Serveur de cet espace : ' + (e.serveur || '—') }),
+    ]);
+    const essai = el('p', { class: 'tpt doux', style: 'margin:.4rem 0 0', text: '' });
+    bloc.appendChild(el('button', {
+      type: 'button', class: 'btn mini', text: 'Tester ce serveur',
+      onclick: async function () {
+        essai.textContent = 'Test en cours…';
+        try {
+          const r = await fetch(String(e.serveur).replace(/\/+$/, '') + '/api/sante');
+          const t = await r.text();
+          let j = null; try { j = JSON.parse(t); } catch (err) { j = null; }
+          essai.textContent = j && j.etat === 'ok'
+            ? 'Le serveur répond — règles v' + (j.regles || 1) + '.'
+            : 'Le serveur répond ' + r.status + ' : ' + t.slice(0, 120);
+        } catch (err) {
+          essai.textContent = 'Injoignable : ' + ((err && err.message) || err) +
+            ' — l\'adresse est-elle encore la bonne ?';
+        }
+      },
+    }));
+    bloc.appendChild(essai);
+    carte.appendChild(bloc);
   }
 
   // Le serveur a perdu ses données — un redéploiement sans disque persistant,
